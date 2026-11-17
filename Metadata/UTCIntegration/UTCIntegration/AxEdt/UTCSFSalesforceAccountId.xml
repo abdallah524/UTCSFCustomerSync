@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxEdt xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns=""
+	i:type="AxEdtString">
+	<Name>UTCSFSalesforceAccountId</Name>
+	<HelpText>18-character Salesforce Account Record ID returned by the Apex REST API.</HelpText>
+	<Label>Salesforce Account ID</Label>
+	<ArrayElements />
+	<Relations />
+	<TableReferences />
+	<StringSize>32</StringSize>
+</AxEdt>

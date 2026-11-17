@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>UTCSFLogisticsElectronicAddress_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Chain of Command extension on <c>LogisticsElectronicAddress</c> to detect when a primary phone
+/// or primary email address is inserted or updated, resolve the linked <c>CustTable</c> via
+/// <c>DirPartyLocation</c>, and enqueue the customer for Salesforce synchronization.
+/// </summary>
+[ExtensionOf(tableStr(LogisticsElectronicAddress))]
+public final class UTCSFLogisticsElectronicAddress_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    public void insert()
+    {
+        boolean isPrimaryPhoneOrEmail = (this.IsPrimary == NoYes::Yes)
+            && (this.Type == LogisticsElectronicAddressMethodType::Phone
+             || this.Type == LogisticsElectronicAddressMethodType::Email);
+
+        next insert();
+
+        if (isPrimaryPhoneOrEmail && this.Location)
+        {
+            UTCSFCustomerChangeHandler::tryEnqueueByLocationRecId(this.Location);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>update</Name>
+				<Source><![CDATA[
+    public void update()
+    {
+        LogisticsElectronicAddress origAddress = this.orig();
+
+        boolean isPhoneOrEmail = (this.Type == LogisticsElectronicAddressMethodType::Phone
+                               || this.Type == LogisticsElectronicAddressMethodType::Email
+                               || origAddress.Type == LogisticsElectronicAddressMethodType::Phone
+                               || origAddress.Type == LogisticsElectronicAddressMethodType::Email);
+
+        boolean touchesPrimary = (this.IsPrimary == NoYes::Yes || origAddress.IsPrimary == NoYes::Yes);
+
+        boolean hasContactChange = (this.Locator       != origAddress.Locator
+                                 || this.IsPrimary     != origAddress.IsPrimary
+                                 || this.IsMobilePhone != origAddress.IsMobilePhone
+                                 || this.Type          != origAddress.Type);
+
+        next update();
+
+        if (isPhoneOrEmail && touchesPrimary && hasContactChange && this.Location)
+        {
+            UTCSFCustomerChangeHandler::tryEnqueueByLocationRecId(this.Location);
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

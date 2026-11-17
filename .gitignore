@@ -1,0 +1,16 @@
+# macOS
+.DS_Store
+
+# Environment & Secrets
+.env
+.env.*
+*.env
+
+# Visual Studio 2022 / D365 F&O build outputs
+.vs/
+bin/
+obj/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates

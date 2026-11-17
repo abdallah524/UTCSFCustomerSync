@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>UTCSFCustomerPushBatchContract</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Data contract for the <c>UTCSFCustomerPushBatchService</c> SysOperation batch job.
+/// </summary>
+[DataContractAttribute]
+public class UTCSFCustomerPushBatchContract implements SysOperationValidatable, SysOperationInitializable
+{
+    private int     maxRecordsToProcess;
+    private int     batchSizePerApiCall;
+    private boolean includeFailedForRetry;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initialize</Name>
+				<Source><![CDATA[
+    public void initialize()
+    {
+        maxRecordsToProcess   = 500;
+        batchSizePerApiCall   = 1;
+        includeFailedForRetry = false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmMaxRecordsToProcess</Name>
+				<Source><![CDATA[
+    [DataMemberAttribute('MaxRecordsToProcess'),
+     SysOperationLabelAttribute(literalStr('Max Queue Records Per Run')),
+     SysOperationHelpTextAttribute(literalStr('Maximum number of pending queue records to process in a single batch execution.')),
+     SysOperationDisplayOrderAttribute('1')]
+    public int parmMaxRecordsToProcess(int _maxRecordsToProcess = maxRecordsToProcess)
+    {
+        maxRecordsToProcess = _maxRecordsToProcess;
+        return maxRecordsToProcess;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmBatchSizePerApiCall</Name>
+				<Source><![CDATA[
+    [DataMemberAttribute('BatchSizePerApiCall'),
+     SysOperationLabelAttribute(literalStr('Customers Per API Call')),
+     SysOperationHelpTextAttribute(literalStr('1 customer per call for real-time triggers; up to 200 per call for bulk backfills.')),
+     SysOperationDisplayOrderAttribute('2')]
+    public int parmBatchSizePerApiCall(int _batchSizePerApiCall = batchSizePerApiCall)
+    {
+        batchSizePerApiCall = _batchSizePerApiCall;
+        return batchSizePerApiCall;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmIncludeFailedForRetry</Name>
+				<Source><![CDATA[
+    [DataMemberAttribute('IncludeFailedForRetry'),
+     SysOperationLabelAttribute(literalStr('Re-queue Failed Records')),
+     SysOperationHelpTextAttribute(literalStr('If enabled, resets Failed records (excluding HTTP 400 validation errors) to Pending before processing.')),
+     SysOperationDisplayOrderAttribute('3')]
+    public boolean parmIncludeFailedForRetry(boolean _includeFailedForRetry = includeFailedForRetry)
+    {
+        includeFailedForRetry = _includeFailedForRetry;
+        return includeFailedForRetry;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validate</Name>
+				<Source><![CDATA[
+    public boolean validate()
+    {
+        boolean isValid = true;
+
+        if (batchSizePerApiCall < 1 || batchSizePerApiCall > 200)
+        {
+            isValid = checkFailed('Customers Per API Call must be between 1 and 200.');
+        }
+
+        if (maxRecordsToProcess < 1)
+        {
+            isValid = checkFailed('Max Queue Records Per Run must be at least 1.');
+        }
+
+        return isValid;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

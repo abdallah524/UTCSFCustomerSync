@@ -1,0 +1,409 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>UTCSFCustomerPushLog</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class UTCSFCustomerPushLog extends FormRun
+{
+}
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>UTCSFCustomerPushLog</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+
+            this.queryBuildDataSource().addSortField(
+                fieldNum(UTCSFCustomerPushLog, CreatedDateTime),
+                SortOrder::Descending);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="">
+			<Control>
+				<Name>RepushCustomerButton</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        public void clicked()
+        {
+            super();
+
+            if (!UTCSFCustomerPushLog.CustAccount)
+            {
+                return;
+            }
+
+            changecompany('utc')
+            {
+                CustTable custTable = CustTable::find(UTCSFCustomerPushLog.CustAccount);
+                if (!custTable.RecId)
+                {
+                    warning(strFmt('Customer %1 not found in company utc.', UTCSFCustomerPushLog.CustAccount));
+                    return;
+                }
+
+                UTCSFCustomerPushQueue queueRecord = UTCSFCustomerPushQueue::enqueue(custTable.AccountNum, 'D365FO');
+                if (UTCSFCustomerPushQueue::markProcessing(queueRecord.RecId))
+                {
+                    UTCSFCustomerPushQueue activeQueue = UTCSFCustomerPushQueue::findByRecId(queueRecord.RecId);
+                    boolean pushed = UTCSFCustomerPushService::construct().pushCustomer(activeQueue);
+                    if (pushed)
+                    {
+                        info(strFmt('Customer %1 successfully pushed to Salesforce.', custTable.AccountNum));
+                    }
+                    else
+                    {
+                        error(strFmt('Customer %1 push failed. Check the latest log entry for details.', custTable.AccountNum));
+                    }
+                }
+            }
+
+            UTCSFCustomerPushLog_ds.executeQuery();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>UTCSFCustomerPushLog</Name>
+			<Table>UTCSFCustomerPushLog</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>CreatedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustAccount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DurationMs</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HttpStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PartyNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>QueueRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RequestId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RequestPayload</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ResponsePayload</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesforceAccountId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SyncStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">Salesforce Customer Push Integration Log</Caption>
+		<DataSource xmlns="">UTCSFCustomerPushLog</DataSource>
+		<Pattern xmlns="">SimpleListDetails</Pattern>
+		<PatternVersion xmlns="">UX7 1.3</PatternVersion>
+		<Style xmlns="">SimpleListDetails</Style>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormActionPaneControl">
+				<Name>LogActionPane</Name>
+				<Type>ActionPane</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormButtonGroupControl">
+						<Name>ActionsButtonGroup</Name>
+						<Type>ButtonGroup</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonControl">
+								<Name>RepushCustomerButton</Name>
+								<HelpText>Immediately re-pushes the selected customer to Salesforce and records a new log entry.</HelpText>
+								<Text>Push Customer Now</Text>
+								<Type>Button</Type>
+								<FormControlExtension
+									i:nil="true" />
+							</AxFormControl>
+						</Controls>
+					</AxFormControl>
+				</Controls>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>NavigationListGroup</Name>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Type>Group</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl>
+						<Name>QuickFilterControl</Name>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension>
+							<Name>QuickFilterControl</Name>
+							<ExtensionComponents />
+							<ExtensionProperties>
+								<AxFormControlExtensionProperty>
+									<Name>targetControlName</Name>
+									<Type>String</Type>
+									<Value>LogGrid</Value>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>defaultColumnName</Name>
+									<Type>String</Type>
+									<Value>CustAccount</Value>
+								</AxFormControlExtensionProperty>
+							</ExtensionProperties>
+						</FormControlExtension>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGridControl">
+						<Name>LogGrid</Name>
+						<AllowEdit>No</AllowEdit>
+						<DataSource>UTCSFCustomerPushLog</DataSource>
+						<MultiSelect>No</MultiSelect>
+						<ShowRowLabels>No</ShowRowLabels>
+						<Style>List</Style>
+						<Type>Grid</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>Grid_CustAccount</Name>
+								<DataField>CustAccount</DataField>
+								<DataSource>UTCSFCustomerPushLog</DataSource>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormComboBoxControl">
+								<Name>Grid_SyncStatus</Name>
+								<DataField>SyncStatus</DataField>
+								<DataSource>UTCSFCustomerPushLog</DataSource>
+								<Type>ComboBox</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Items />
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormIntegerControl">
+								<Name>Grid_HttpStatus</Name>
+								<DataField>HttpStatus</DataField>
+								<DataSource>UTCSFCustomerPushLog</DataSource>
+								<Type>Integer</Type>
+								<FormControlExtension
+									i:nil="true" />
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormDateTimeControl">
+								<Name>Grid_CreatedDateTime</Name>
+								<DataField>CreatedDateTime</DataField>
+								<DataSource>UTCSFCustomerPushLog</DataSource>
+								<Type>DateTime</Type>
+								<FormControlExtension
+									i:nil="true" />
+							</AxFormControl>
+						</Controls>
+					</AxFormControl>
+				</Controls>
+				<FrameType>None</FrameType>
+				<Style>SidePanel</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DetailsHeaderGroup</Name>
+				<Type>Group</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>Header_CustAccount</Name>
+						<DataField>CustAccount</DataField>
+						<DataSource>UTCSFCustomerPushLog</DataSource>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>Header_PartyNumber</Name>
+						<DataField>PartyNumber</DataField>
+						<DataSource>UTCSFCustomerPushLog</DataSource>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>Header_RequestId</Name>
+						<DataField>RequestId</DataField>
+						<DataSource>UTCSFCustomerPushLog</DataSource>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormIntegerControl">
+						<Name>Header_HttpStatus</Name>
+						<DataField>HttpStatus</DataField>
+						<DataSource>UTCSFCustomerPushLog</DataSource>
+						<Type>Integer</Type>
+						<FormControlExtension
+							i:nil="true" />
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormComboBoxControl">
+						<Name>Header_SyncStatus</Name>
+						<DataField>SyncStatus</DataField>
+						<DataSource>UTCSFCustomerPushLog</DataSource>
+						<Type>ComboBox</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Items />
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>Header_SalesforceAccountId</Name>
+						<DataField>SalesforceAccountId</DataField>
+						<DataSource>UTCSFCustomerPushLog</DataSource>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormIntegerControl">
+						<Name>Header_DurationMs</Name>
+						<DataField>DurationMs</DataField>
+						<DataSource>UTCSFCustomerPushLog</DataSource>
+						<Type>Integer</Type>
+						<FormControlExtension
+							i:nil="true" />
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormDateTimeControl">
+						<Name>Header_CreatedDateTime</Name>
+						<DataField>CreatedDateTime</DataField>
+						<DataSource>UTCSFCustomerPushLog</DataSource>
+						<Type>DateTime</Type>
+						<FormControlExtension
+							i:nil="true" />
+					</AxFormControl>
+				</Controls>
+				<ColumnsMode>Fill</ColumnsMode>
+				<FrameType>None</FrameType>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormTabControl">
+				<Name>DetailsTab</Name>
+				<Type>Tab</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormTabPageControl">
+						<Name>RequestPayloadTabPage</Name>
+						<Caption>Outbound Request Payload (JSON)</Caption>
+						<Type>TabPage</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>RequestPayloadControl</Name>
+								<DataField>RequestPayload</DataField>
+								<DataSource>UTCSFCustomerPushLog</DataSource>
+								<MultiLine>Yes</MultiLine>
+								<Type>String</Type>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+							</AxFormControl>
+						</Controls>
+						<ColumnsMode>Fill</ColumnsMode>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormTabPageControl">
+						<Name>ResponsePayloadTabPage</Name>
+						<Caption>Salesforce Response Payload (JSON)</Caption>
+						<Type>TabPage</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>ResponsePayloadControl</Name>
+								<DataField>ResponsePayload</DataField>
+								<DataSource>UTCSFCustomerPushLog</DataSource>
+								<MultiLine>Yes</MultiLine>
+								<Type>String</Type>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+							</AxFormControl>
+						</Controls>
+						<ColumnsMode>Fill</ColumnsMode>
+					</AxFormControl>
+				</Controls>
+				<Style>FastTabs</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

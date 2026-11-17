@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>UTCSFCustomerPushBatchService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// SysOperation and <c>Global::runAsync</c> processor for <c>UTCSFCustomerPushQueue</c>.
+/// Supports both immediate non-blocking real-time pushes via <c>runAsync</c> and scheduled
+/// recurring SysOperation batch sweeps.
+/// </summary>
+public class UTCSFCustomerPushBatchService extends SysOperationServiceBase
+{
+    private const str TargetCompanyId = 'utc';
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>processQueue</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Entry point for the SysOperation batch job to process pending records in <c>UTCSFCustomerPushQueue</c>.
+    /// </summary>
+    /// <param name = "_contract">Data contract specifying batch limits.</param>
+    public void processQueue(UTCSFCustomerPushBatchContract _contract)
+    {
+        int maxRecords = (_contract != null && _contract.parmMaxRecordsToProcess() > 0)
+            ? _contract.parmMaxRecordsToProcess()
+            : 500;
+
+        boolean requeueFailed = (_contract != null) ? _contract.parmIncludeFailedForRetry() : false;
+
+        changecompany(TargetCompanyId)
+        {
+            UTCSFIntegrationParameters parameters = UTCSFIntegrationParameters::find();
+            if (parameters.IsEnabled == NoYes::No)
+            {
+                info('Salesforce Customer Push integration is currently disabled in parameters.');
+                return;
+            }
+
+            if (requeueFailed)
+            {
+                this.resetEligibleFailedRecords();
+            }
+
+            UTCSFCustomerPushService pushService    = UTCSFCustomerPushService::construct();
+            UTCSFCustomerPushQueue   queueCandidate;
+            List                     candidateRecIds = new List(Types::Int64);
+            int                      selectedCount   = 0;
+
+            while select RecId from queueCandidate
+                order by CreatedDateTime asc
+                where queueCandidate.Status == UTCSFCustomerPushStatus::Pending
+            {
+                candidateRecIds.addEnd(queueCandidate.RecId);
+                selectedCount++;
+
+                if (selectedCount >= maxRecords)
+                {
+                    break;
+                }
+            }
+
+            int            succeededCount = 0;
+            int            failedCount    = 0;
+            ListEnumerator enumerator     = candidateRecIds.getEnumerator();
+
+            while (enumerator.moveNext())
+            {
+                RecId queueRecId = enumerator.current();
+
+                if (UTCSFCustomerPushQueue::markProcessing(queueRecId))
+                {
+                    UTCSFCustomerPushQueue activeRecord = UTCSFCustomerPushQueue::findByRecId(queueRecId);
+                    if (pushService.pushCustomer(activeRecord))
+                    {
+                        succeededCount++;
+                    }
+                    else
+                    {
+                        failedCount++;
+                    }
+                }
+            }
+
+            info(strFmt(
+                'UTC Salesforce Customer Push completed. Succeeded: %1, Failed: %2.',
+                succeededCount,
+                failedCount));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>resetEligibleFailedRecords</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Resets transient Failed queue items back to Pending while excluding non-retryable HTTP 400 errors.
+    /// </summary>
+    private void resetEligibleFailedRecords()
+    {
+        UTCSFCustomerPushQueue queueRecord;
+
+        ttsbegin;
+
+        while select forupdate queueRecord
+            where queueRecord.Status == UTCSFCustomerPushStatus::Failed
+               && !(queueRecord.LastError like 'HTTP 400*')
+        {
+            queueRecord.Status     = UTCSFCustomerPushStatus::Pending;
+            queueRecord.RetryCount = 0;
+            queueRecord.update();
+        }
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processQueueItemAsync</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Static asynchronous worker method invoked via <c>Global::runAsync</c> immediately after a database commit.
+    /// Pushes a single queued customer record to Salesforce on a background thread without blocking POS or UI saves.
+    /// </summary>
+    /// <param name = "_params">Container holding <c>[RecId queueRecId]</c>.</param>
+    /// <param name = "_cancellationToken">Cancellation token supplied by the async runtime.</param>
+    /// <returns>Container holding <c>[boolean isSuccess]</c>.</returns>
+    public static container processQueueItemAsync(
+        container                          _params,
+        System.Threading.CancellationToken _cancellationToken)
+    {
+        if (conLen(_params) < 1)
+        {
+            return [false];
+        }
+
+        RecId   queueRecId = conPeek(_params, 1);
+        boolean isSuccess  = false;
+
+        if (!queueRecId)
+        {
+            return [false];
+        }
+
+        changecompany(TargetCompanyId)
+        {
+            if (UTCSFCustomerPushQueue::markProcessing(queueRecId))
+            {
+                UTCSFCustomerPushQueue   queueRecord = UTCSFCustomerPushQueue::findByRecId(queueRecId);
+                UTCSFCustomerPushService pushService = UTCSFCustomerPushService::construct();
+
+                isSuccess = pushService.pushCustomer(queueRecord);
+            }
+        }
+
+        return [isSuccess];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>triggerImmediateAsyncPush</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Dispatches an asynchronous background execution via <c>Global::runAsync</c> for the specified queue item.
+    /// Safe to call from both interactive client sessions and non-interactive/batch sessions.
+    /// </summary>
+    /// <param name = "_queueRecId">The <c>RecId</c> of the <c>UTCSFCustomerPushQueue</c> record.</param>
+    public static void triggerImmediateAsyncPush(RecId _queueRecId)
+    {
+        if (!_queueRecId)
+        {
+            return;
+        }
+
+        try
+        {
+            Global::runAsync(
+                classNum(UTCSFCustomerPushBatchService),
+                staticMethodStr(UTCSFCustomerPushBatchService, processQueueItemAsync),
+                [_queueRecId],
+                System.Threading.CancellationToken::None);
+        }
+        catch
+        {
+            // If Global::runAsync is unavailable in a non-GUI/OData context, the record remains Pending
+            // in UTCSFCustomerPushQueue and is picked up by the recurring SysOperation batch job.
+            exceptionTextFallThrough();
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

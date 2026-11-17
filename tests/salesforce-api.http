@@ -1,0 +1,119 @@
+### ============================================================================
+### UTC Dynamics 365 F&O -> Salesforce (DCloudUAT) Real-Time Customer Push Tests
+### Compatible with VS Code REST Client & Visual Studio 2022 .http Runner
+### ============================================================================
+
+@baseUrl = https://velocity-speed-6495--dclouduat.sandbox.my.salesforce.com
+@tokenUrl = {{baseUrl}}/services/oauth2/token
+@customersEndpoint = {{baseUrl}}/services/apexrest/utc/v1/customers
+@clientId = YOUR_SALESFORCE_CLIENT_ID
+@clientSecret = YOUR_SALESFORCE_CLIENT_SECRET
+
+### ----------------------------------------------------------------------------
+### 1. OAuth2 Token Acquisition (client_credentials grant, valid 120 minutes)
+### ----------------------------------------------------------------------------
+# @name auth
+POST {{tokenUrl}} HTTP/1.1
+Content-Type: application/x-www-form-urlencoded
+Accept: application/json
+
+grant_type=client_credentials&client_id={{clientId}}&client_secret={{clientSecret}}
+
+
+### ----------------------------------------------------------------------------
+### 2. Health Check Endpoint (GET with Bearer token)
+### ----------------------------------------------------------------------------
+@accessToken = {{auth.response.body.access_token}}
+
+GET {{customersEndpoint}} HTTP/1.1
+Authorization: Bearer {{accessToken}}
+X-Request-Id: {{$guid}}
+Accept: application/json
+
+
+### ----------------------------------------------------------------------------
+### 3. Real-Time Single B2C Customer Push (POST - Exact CustomersV3 Schema)
+### ----------------------------------------------------------------------------
+POST {{customersEndpoint}} HTTP/1.1
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json; charset=utf-8
+X-Request-Id: {{$guid}}
+Accept: application/json
+
+{
+  "customers": [
+    {
+      "dataAreaId": "utc",
+      "CustomerAccount": "RC-081346",
+      "PartyNumber": "000387281",
+      "PartyType": "Person",
+      "CustomerGroupId": "Retail",
+      "PersonFirstName": "Abdullah",
+      "PersonMiddleName": "",
+      "PersonLastName": "Al-Rateeb",
+      "NameAlias": "Abdullah Al-Rateeb",
+      "PersonGender": "Unknown",
+      "LanguageId": "en-US",
+      "PrimaryContactPhone": "96550800075",
+      "PrimaryContactPhoneIsMobile": "No",
+      "PrimaryContactEmail": "",
+      "AddressCity": "",
+      "AddressCountryRegionId": "KWT",
+      "OnHoldStatus": "No",
+      "CreatedDateTimeCustTable": "2026-10-26T09:14:52Z",
+      "ModifiedDateTimeCustTable": "2026-10-26T09:14:56Z",
+      "SourceChannel": "POS",
+      "OperatingUnitNumber": "D601",
+      "Terminal": "D60102",
+      "MarketingConsentSms": null,
+      "MarketingConsentWhatsApp": null,
+      "MarketingConsentEmail": null,
+      "ConsentCapturedDateTime": null,
+      "AliasCustomerAccounts": []
+    }
+  ]
+}
+
+
+### ----------------------------------------------------------------------------
+### 4. Real-Time B2C Customer Push with Arabic UTF-8 Name & City Verification
+### ----------------------------------------------------------------------------
+POST {{customersEndpoint}} HTTP/1.1
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json; charset=utf-8
+X-Request-Id: {{$guid}}
+Accept: application/json
+
+{
+  "customers": [
+    {
+      "dataAreaId": "utc",
+      "CustomerAccount": "RC-081347",
+      "PartyNumber": "000387282",
+      "PartyType": "Person",
+      "CustomerGroupId": "Retail",
+      "PersonFirstName": "عبدالله",
+      "PersonMiddleName": "",
+      "PersonLastName": "الرتيب",
+      "NameAlias": "عبدالله الرتيب",
+      "PersonGender": "Unknown",
+      "LanguageId": "ar-KW",
+      "PrimaryContactPhone": "96550800076",
+      "PrimaryContactPhoneIsMobile": "Yes",
+      "PrimaryContactEmail": "abdullah.alrateeb@example.com",
+      "AddressCity": "الكويت",
+      "AddressCountryRegionId": "KWT",
+      "OnHoldStatus": "No",
+      "CreatedDateTimeCustTable": "2026-10-26T09:14:52Z",
+      "ModifiedDateTimeCustTable": "2026-10-26T09:14:56Z",
+      "SourceChannel": "POS",
+      "OperatingUnitNumber": "D601",
+      "Terminal": "D60102",
+      "MarketingConsentSms": null,
+      "MarketingConsentWhatsApp": null,
+      "MarketingConsentEmail": null,
+      "ConsentCapturedDateTime": null,
+      "AliasCustomerAccounts": []
+    }
+  ]
+}

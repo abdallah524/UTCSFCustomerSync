@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxEdt xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns=""
+	i:type="AxEdtString">
+	<Name>UTCSFApiUrl</Name>
+	<HelpText>HTTPS URL endpoint for Salesforce OAuth2 or Apex REST API.</HelpText>
+	<Label>Salesforce URL</Label>
+	<ArrayElements />
+	<Relations />
+	<TableReferences />
+	<StringSize>500</StringSize>
+</AxEdt>

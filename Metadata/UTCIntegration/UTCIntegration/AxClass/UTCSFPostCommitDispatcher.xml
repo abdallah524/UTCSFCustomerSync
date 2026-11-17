@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>UTCSFPostCommitDispatcher</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Subscribes to <c>Application.onTtsNotifyCommit</c> and <c>Application.onTtsNotifyAbort</c>
+/// so that asynchronous outbound Salesforce HTTP pushes are only dispatched after the outer
+/// D365 database transaction commits.
+/// </summary>
+public class UTCSFPostCommitDispatcher
+{
+    private static Set     pendingQueueRecIds;
+    private static boolean isSubscribed;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>registerQueueItemForCommit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Registers a <c>UTCSFCustomerPushQueue</c> RecId to be dispatched asynchronously as soon as the current TTS commits.
+    /// </summary>
+    /// <param name = "_queueRecId">RecId of the staging queue item.</param>
+    public static void registerQueueItemForCommit(RecId _queueRecId)
+    {
+        if (!_queueRecId)
+        {
+            return;
+        }
+
+        if (pendingQueueRecIds == null)
+        {
+            pendingQueueRecIds = new Set(Types::Int64);
+        }
+
+        pendingQueueRecIds.add(_queueRecId);
+
+        if (!isSubscribed)
+        {
+            appl.onTtsNotifyCommit += eventhandler(UTCSFPostCommitDispatcher::onTtsNotifyCommit);
+            appl.onTtsNotifyAbort  += eventhandler(UTCSFPostCommitDispatcher::onTtsNotifyAbort);
+            isSubscribed = true;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>onTtsNotifyCommit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Event handler invoked by the kernel when the outermost transaction commits (<c>ttsLevel == 0</c>).
+    /// </summary>
+    public static void onTtsNotifyCommit()
+    {
+        if (pendingQueueRecIds == null || pendingQueueRecIds.empty())
+        {
+            return;
+        }
+
+        Set           itemsToDispatch = pendingQueueRecIds;
+        SetEnumerator enumerator      = itemsToDispatch.getEnumerator();
+
+        pendingQueueRecIds = new Set(Types::Int64);
+
+        while (enumerator.moveNext())
+        {
+            RecId queueRecId = enumerator.current();
+            UTCSFCustomerPushBatchService::triggerImmediateAsyncPush(queueRecId);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>onTtsNotifyAbort</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Clears pending in-memory queue IDs if the transaction rolls back.
+    /// </summary>
+    public static void onTtsNotifyAbort()
+    {
+        if (pendingQueueRecIds != null)
+        {
+            pendingQueueRecIds = new Set(Types::Int64);
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

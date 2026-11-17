@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxMenuExtension xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V1">
+	<Name>AccountsReceivable.UTCIntegration</Name>
+	<Customizations />
+	<Elements>
+		<AxMenuExtensionElement xmlns="">
+			<Parent>Setup</Parent>
+			<MenuElement xmlns=""
+				i:type="AxMenuElementMenuItem">
+				<Name>UTCSFIntegrationParameters</Name>
+				<MenuItemName>UTCSFIntegrationParameters</MenuItemName>
+			</MenuElement>
+		</AxMenuExtensionElement>
+		<AxMenuExtensionElement xmlns="">
+			<Parent>InquiriesAndReports</Parent>
+			<MenuElement xmlns=""
+				i:type="AxMenuElementMenuItem">
+				<Name>UTCSFCustomerPushLog</Name>
+				<MenuItemName>UTCSFCustomerPushLog</MenuItemName>
+			</MenuElement>
+		</AxMenuExtensionElement>
+		<AxMenuExtensionElement xmlns="">
+			<Parent>InquiriesAndReports</Parent>
+			<MenuElement xmlns=""
+				i:type="AxMenuElementMenuItem">
+				<Name>UTCSFCustomerPushQueue</Name>
+				<MenuItemName>UTCSFCustomerPushQueue</MenuItemName>
+			</MenuElement>
+		</AxMenuExtensionElement>
+		<AxMenuExtensionElement xmlns="">
+			<Parent>PeriodicTasks</Parent>
+			<MenuElement xmlns=""
+				i:type="AxMenuElementMenuItem">
+				<Name>UTCSFCustomerPushBatchController</Name>
+				<MenuItemName>UTCSFCustomerPushBatchController</MenuItemName>
+				<MenuItemType>Action</MenuItemType>
+			</MenuElement>
+		</AxMenuExtensionElement>
+	</Elements>
+	<MenuHooks />
+</AxMenuExtension>

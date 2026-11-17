@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxSecurityDuty xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>UTCSFCustomerIntegrationAdmin</Name>
+	<Label>Maintain UTC Salesforce Customer Integration</Label>
+	<Privileges>
+		<AxSecurityPrivilegeReference>
+			<Name>UTCSFIntegrationParametersMaintain</Name>
+		</AxSecurityPrivilegeReference>
+		<AxSecurityPrivilegeReference>
+			<Name>UTCSFCustomerPushLogView</Name>
+		</AxSecurityPrivilegeReference>
+	</Privileges>
+</AxSecurityDuty>

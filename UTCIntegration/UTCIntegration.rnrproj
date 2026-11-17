@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="14.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <BuildTasksDirectory Condition=" '$(BuildTasksDirectory)' == '' ">$(MSBuildProgramFiles32)\MSBuild\Microsoft\Dynamics\AX</BuildTasksDirectory>
+    <Model>UTCIntegration</Model>
+    <TargetFrameworkVersion>v4.6</TargetFrameworkVersion>
+    <OutputPath>bin</OutputPath>
+    <SchemaVersion>2.0</SchemaVersion>
+    <GenerateCrossReferences>True</GenerateCrossReferences>
+    <UseAppCheckerRules>False</UseAppCheckerRules>
+    <vasp>False</vasp>
+    <ProjectGuid>{8B42D14F-7D28-4A9E-9A11-3F8C71E02B41}</ProjectGuid>
+    <Name>UTCIntegration</Name>
+    <RootNamespace>UTCIntegration</RootNamespace>
+    <StartupObject>UTCSFIntegrationParameters</StartupObject>
+    <StartupType>Form</StartupType>
+    <SynchronizeDatabase>True</SynchronizeDatabase>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|AnyCPU'">
+    <Configuration>Debug</Configuration>
+    <DBSyncInBuild>True</DBSyncInBuild>
+    <GenerateFormAdaptors>False</GenerateFormAdaptors>
+    <Company>utc</Company>
+    <Partition>initial</Partition>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DataEntityExpandParentChildRelations>False</DataEntityExpandParentChildRelations>
+    <DataEntityUseLabelTextAsFieldName>False</DataEntityUseLabelTextAsFieldName>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <ItemGroup>
+    <Folder Include="Base Enums\" />
+    <Folder Include="Classes\" />
+    <Folder Include="Display Menu Items\" />
+    <Folder Include="Action Menu Items\" />
+    <Folder Include="Extended Data Types\" />
+    <Folder Include="Forms\" />
+    <Folder Include="Menu Extensions\" />
+    <Folder Include="Security Duties\" />
+    <Folder Include="Security Privileges\" />
+    <Folder Include="Tables\" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="AxEnum\UTCSFCustomerPushStatus">
+      <SubType>Content</SubType>
+      <Name>UTCSFCustomerPushStatus</Name>
+      <Link>Base Enums\UTCSFCustomerPushStatus</Link>
+    </Content>
+    <Content Include="AxEdt\UTCSFApiUrl">
+      <SubType>Content</SubType>
+      <Name>UTCSFApiUrl</Name>
+      <Link>Extended Data Types\UTCSFApiUrl</Link>
+    </Content>
+    <Content Include="AxEdt\UTCSFClientId">
+      <SubType>Content</SubType>
+      <Name>UTCSFClientId</Name>
+      <Link>Extended Data Types\UTCSFClientId</Link>
+    </Content>
+    <Content Include="AxEdt\UTCSFRequestId">
+      <SubType>Content</SubType>
+      <Name>UTCSFRequestId</Name>
+      <Link>Extended Data Types\UTCSFRequestId</Link>
+    </Content>
+    <Content Include="AxEdt\UTCSFSalesforceAccountId">
+      <SubType>Content</SubType>
+      <Name>UTCSFSalesforceAccountId</Name>
+      <Link>Extended Data Types\UTCSFSalesforceAccountId</Link>
+    </Content>
+    <Content Include="AxEdt\UTCSFSourceChannel">
+      <SubType>Content</SubType>
+      <Name>UTCSFSourceChannel</Name>
+      <Link>Extended Data Types\UTCSFSourceChannel</Link>
+    </Content>
+    <Content Include="AxTable\UTCSFIntegrationParameters">
+      <SubType>Content</SubType>
+      <Name>UTCSFIntegrationParameters</Name>
+      <Link>Tables\UTCSFIntegrationParameters</Link>
+    </Content>
+    <Content Include="AxTable\UTCSFCustomerPushQueue">
+      <SubType>Content</SubType>
+      <Name>UTCSFCustomerPushQueue</Name>
+      <Link>Tables\UTCSFCustomerPushQueue</Link>
+    </Content>
+    <Content Include="AxTable\UTCSFCustomerPushLog">
+      <SubType>Content</SubType>
+      <Name>UTCSFCustomerPushLog</Name>
+      <Link>Tables\UTCSFCustomerPushLog</Link>
+    </Content>
+    <Content Include="AxClass\UTCSFCustomerPushService">
+      <SubType>Content</SubType>
+      <Name>UTCSFCustomerPushService</Name>
+      <Link>Classes\UTCSFCustomerPushService</Link>
+    </Content>
+    <Content Include="AxClass\UTCSFCustomerPushBatchContract">
+      <SubType>Content</SubType>
+      <Name>UTCSFCustomerPushBatchContract</Name>
+      <Link>Classes\UTCSFCustomerPushBatchContract</Link>
+    </Content>
+    <Content Include="AxClass\UTCSFCustomerPushBatchService">
+      <SubType>Content</SubType>
+      <Name>UTCSFCustomerPushBatchService</Name>
+      <Link>Classes\UTCSFCustomerPushBatchService</Link>
+    </Content>
+    <Content Include="AxClass\UTCSFCustomerPushBatchController">
+      <SubType>Content</SubType>
+      <Name>UTCSFCustomerPushBatchController</Name>
+      <Link>Classes\UTCSFCustomerPushBatchController</Link>
+    </Content>
+    <Content Include="AxClass\UTCSFCustomerChangeHandler">
+      <SubType>Content</SubType>
+      <Name>UTCSFCustomerChangeHandler</Name>
+      <Link>Classes\UTCSFCustomerChangeHandler</Link>
+    </Content>
+    <Content Include="AxClass\UTCSFPostCommitDispatcher">
+      <SubType>Content</SubType>
+      <Name>UTCSFPostCommitDispatcher</Name>
+      <Link>Classes\UTCSFPostCommitDispatcher</Link>
+    </Content>
+    <Content Include="AxClass\UTCSFCustTable_Extension">
+      <SubType>Content</SubType>
+      <Name>UTCSFCustTable_Extension</Name>
+      <Link>Classes\UTCSFCustTable_Extension</Link>
+    </Content>
+    <Content Include="AxClass\UTCSFDirPerson_Extension">
+      <SubType>Content</SubType>
+      <Name>UTCSFDirPerson_Extension</Name>
+      <Link>Classes\UTCSFDirPerson_Extension</Link>
+    </Content>
+    <Content Include="AxClass\UTCSFDirPersonName_Extension">
+      <SubType>Content</SubType>
+      <Name>UTCSFDirPersonName_Extension</Name>
+      <Link>Classes\UTCSFDirPersonName_Extension</Link>
+    </Content>
+    <Content Include="AxClass\UTCSFLogisticsElectronicAddress_Extension">
+      <SubType>Content</SubType>
+      <Name>UTCSFLogisticsElectronicAddress_Extension</Name>
+      <Link>Classes\UTCSFLogisticsElectronicAddress_Extension</Link>
+    </Content>
+    <Content Include="AxForm\UTCSFIntegrationParameters">
+      <SubType>Content</SubType>
+      <Name>UTCSFIntegrationParameters</Name>
+      <Link>Forms\UTCSFIntegrationParameters</Link>
+    </Content>
+    <Content Include="AxForm\UTCSFCustomerPushLog">
+      <SubType>Content</SubType>
+      <Name>UTCSFCustomerPushLog</Name>
+      <Link>Forms\UTCSFCustomerPushLog</Link>
+    </Content>
+    <Content Include="AxForm\UTCSFCustomerPushQueue">
+      <SubType>Content</SubType>
+      <Name>UTCSFCustomerPushQueue</Name>
+      <Link>Forms\UTCSFCustomerPushQueue</Link>
+    </Content>
+    <Content Include="AxMenuItemDisplay\UTCSFIntegrationParameters">
+      <SubType>Content</SubType>
+      <Name>UTCSFIntegrationParameters</Name>
+      <Link>Display Menu Items\UTCSFIntegrationParameters</Link>
+    </Content>
+    <Content Include="AxMenuItemDisplay\UTCSFCustomerPushLog">
+      <SubType>Content</SubType>
+      <Name>UTCSFCustomerPushLog</Name>
+      <Link>Display Menu Items\UTCSFCustomerPushLog</Link>
+    </Content>
+    <Content Include="AxMenuItemDisplay\UTCSFCustomerPushQueue">
+      <SubType>Content</SubType>
+      <Name>UTCSFCustomerPushQueue</Name>
+      <Link>Display Menu Items\UTCSFCustomerPushQueue</Link>
+    </Content>
+    <Content Include="AxMenuItemAction\UTCSFCustomerPushBatchController">
+      <SubType>Content</SubType>
+      <Name>UTCSFCustomerPushBatchController</Name>
+      <Link>Action Menu Items\UTCSFCustomerPushBatchController</Link>
+    </Content>
+    <Content Include="AxMenuExtension\AccountsReceivable.UTCIntegration">
+      <SubType>Content</SubType>
+      <Name>AccountsReceivable.UTCIntegration</Name>
+      <Link>Menu Extensions\AccountsReceivable.UTCIntegration</Link>
+    </Content>
+    <Content Include="AxSecurityPrivilege\UTCSFIntegrationParametersMaintain">
+      <SubType>Content</SubType>
+      <Name>UTCSFIntegrationParametersMaintain</Name>
+      <Link>Security Privileges\UTCSFIntegrationParametersMaintain</Link>
+    </Content>
+    <Content Include="AxSecurityPrivilege\UTCSFCustomerPushLogView">
+      <SubType>Content</SubType>
+      <Name>UTCSFCustomerPushLogView</Name>
+      <Link>Security Privileges\UTCSFCustomerPushLogView</Link>
+    </Content>
+    <Content Include="AxSecurityDuty\UTCSFCustomerIntegrationAdmin">
+      <SubType>Content</SubType>
+      <Name>UTCSFCustomerIntegrationAdmin</Name>
+      <Link>Security Duties\UTCSFCustomerIntegrationAdmin</Link>
+    </Content>
+  </ItemGroup>
+  <Import Project="$(MSBuildBinPath)\Microsoft.Common.targets" />
+  <Import Project="$(BuildTasksDirectory)\Microsoft.Dynamics.Framework.Tools.BuildTasks.targets" />
+</Project>

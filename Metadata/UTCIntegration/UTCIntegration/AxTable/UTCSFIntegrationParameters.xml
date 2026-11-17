@@ -1,0 +1,379 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>UTCSFIntegrationParameters</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class UTCSFIntegrationParameters extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initValue</Name>
+				<Source><![CDATA[
+    public void initValue()
+    {
+        super();
+
+        this.Key                = 0;
+        this.IsEnabled          = NoYes::Yes;
+        this.MaxRetryCount      = 3;
+        this.HttpTimeoutSeconds = 30;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>find</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Finds the singleton parameter record for the Salesforce integration.
+    /// Automatically initializes the parameter record if it does not yet exist.
+    /// </summary>
+    /// <param name = "_forUpdate">True if the record should be selected for update.</param>
+    /// <returns>The <c>UTCSFIntegrationParameters</c> record.</returns>
+    public static UTCSFIntegrationParameters find(boolean _forUpdate = false)
+    {
+        UTCSFIntegrationParameters parameter;
+
+        if (_forUpdate)
+        {
+            parameter.selectForUpdate(_forUpdate);
+        }
+
+        select firstonly parameter
+            index KeyIdx
+            where parameter.Key == 0;
+
+        if (!parameter && !parameter.isTmp())
+        {
+            Company::createParameter(parameter);
+        }
+
+        return parameter;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>exist</Name>
+				<Source><![CDATA[
+    public static boolean exist()
+    {
+        return (select firstonly RecId from UTCSFIntegrationParameters
+                    where UTCSFIntegrationParameters.Key == 0).RecId != 0;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>editClientSecret</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Edit method to encrypt and mask the OAuth2 Client Secret in the UI.
+    /// </summary>
+    /// <param name = "_set">True when setting a new value from the UI.</param>
+    /// <param name = "_value">Plaintext secret entered by the administrator.</param>
+    /// <returns>Masked or decrypted secret for UI binding.</returns>
+    public edit Password editClientSecret(boolean _set, Password _value)
+    {
+        if (_set)
+        {
+            this.ClientSecret = _value;
+        }
+
+        return Global::editEncryptedField(this, _value, fieldNum(UTCSFIntegrationParameters, ClientSecretEncrypted), _set);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getClientSecret</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Retrieves the decrypted OAuth2 Client Secret stored in the parameters table.
+    /// </summary>
+    /// <returns>Decrypted OAuth2 Client Secret string.</returns>
+    public str getClientSecret()
+    {
+        str decryptedSecret;
+
+        if (this.ClientSecretEncrypted != conNull())
+        {
+            decryptedSecret = Global::editEncryptedField(this, '', fieldNum(UTCSFIntegrationParameters, ClientSecretEncrypted), false);
+        }
+
+        if (!decryptedSecret && this.ClientSecret)
+        {
+            decryptedSecret = this.ClientSecret;
+        }
+
+        return strTrim(decryptedSecret);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateCachedToken</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Persists the newly acquired OAuth2 access token and its UTC expiration timestamp.
+    /// Runs in an isolated transaction so token caching survives even if a downstream API call fails.
+    /// </summary>
+    /// <param name = "_accessToken">Bearer access token returned by Salesforce OAuth2 endpoint.</param>
+    /// <param name = "_expiresAt">UTC expiration timestamp (120 minutes from issuance).</param>
+    public static void updateCachedToken(str _accessToken, utcdatetime _expiresAt)
+    {
+        UTCSFIntegrationParameters parameters;
+
+        ttsbegin;
+        parameters = UTCSFIntegrationParameters::find(true);
+        parameters.CachedAccessToken = _accessToken;
+        parameters.TokenExpiresAt    = _expiresAt;
+        parameters.update();
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>clearCachedToken</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Clears the cached OAuth2 access token and forces the next outbound call to re-authenticate.
+    /// </summary>
+    public static void clearCachedToken()
+    {
+        UTCSFIntegrationParameters parameters;
+
+        ttsbegin;
+        parameters = UTCSFIntegrationParameters::find(true);
+        parameters.CachedAccessToken = '';
+        parameters.TokenExpiresAt    = DateTimeUtil::minValue();
+        parameters.update();
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateWrite</Name>
+				<Source><![CDATA[
+    public boolean validateWrite()
+    {
+        boolean ret = super();
+
+        if (ret && this.IsEnabled == NoYes::Yes)
+        {
+            if (this.TokenUrl && !strStartsWith(strLwr(strTrim(this.TokenUrl)), 'https://'))
+            {
+                ret = checkFailed('The Salesforce OAuth2 Token URL must use HTTPS.');
+            }
+
+            if (this.ApiEndpointUrl && !strStartsWith(strLwr(strTrim(this.ApiEndpointUrl)), 'https://'))
+            {
+                ret = checkFailed('The Salesforce API Endpoint URL must use HTTPS.');
+            }
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<DeveloperDocumentation>Stores connection, OAuth2 credentials, and cached Bearer token parameters for the UTC Salesforce B2C Customer Push integration.</DeveloperDocumentation>
+	<Label>Salesforce Integration Parameters</Label>
+	<TableGroup>Parameter</TableGroup>
+	<CacheLookup>Found</CacheLookup>
+	<ClusteredIndex>KeyIdx</ClusteredIndex>
+	<ModifiedBy>Yes</ModifiedBy>
+	<ModifiedDateTime>Yes</ModifiedDateTime>
+	<PrimaryIndex>KeyIdx</PrimaryIndex>
+	<ReplacementKey>KeyIdx</ReplacementKey>
+	<SaveDataPerCompany>Yes</SaveDataPerCompany>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>IsEnabled</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>TokenUrl</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ApiEndpointUrl</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ClientId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>TokenExpiresAt</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>Key</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>EndpointConfiguration</Name>
+			<Label>Salesforce Endpoint Configuration</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>IsEnabled</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>TokenUrl</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ApiEndpointUrl</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>MaxRetryCount</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HttpTimeoutSeconds</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>OAuthCredentials</Name>
+			<Label>OAuth2 Client Credentials</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>ClientId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ClientSecret</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>TokenCache</Name>
+			<Label>OAuth2 Token Cache</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>TokenExpiresAt</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CachedAccessToken</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>Key</Name>
+			<AllowEdit>No</AllowEdit>
+			<AllowEditOnCreate>No</AllowEditOnCreate>
+			<ExtendedDataType>ParametersKey</ExtendedDataType>
+			<Visible>No</Visible>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>IsEnabled</Name>
+			<ExtendedDataType>NoYesId</ExtendedDataType>
+			<HelpText>Enable or disable real-time customer push to Salesforce.</HelpText>
+			<Label>Enable Salesforce Push</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>TokenUrl</Name>
+			<ExtendedDataType>UTCSFApiUrl</ExtendedDataType>
+			<HelpText>Salesforce OAuth2 token endpoint URL (e.g. https://...my.salesforce.com/services/oauth2/token).</HelpText>
+			<Label>OAuth2 Token URL</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ApiEndpointUrl</Name>
+			<ExtendedDataType>UTCSFApiUrl</ExtendedDataType>
+			<HelpText>Salesforce Apex REST Customer Push endpoint URL (e.g. https://...my.salesforce.com/services/apexrest/utc/v1/customers).</HelpText>
+			<Label>Customer Push Endpoint URL</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ClientId</Name>
+			<ExtendedDataType>UTCSFClientId</ExtendedDataType>
+			<HelpText>Connected App OAuth2 Consumer Key (Client ID).</HelpText>
+			<Label>Client ID</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ClientSecret</Name>
+			<ExtendedDataType>Password</ExtendedDataType>
+			<HelpText>Connected App OAuth2 Consumer Secret (Client Secret) - masked in UI.</HelpText>
+			<Label>Client Secret</Label>
+			<StringSize>255</StringSize>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldContainer">
+			<Name>ClientSecretEncrypted</Name>
+			<ExtendedDataType>EncryptedField</ExtendedDataType>
+			<Visible>No</Visible>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>CachedAccessToken</Name>
+			<ExtendedDataType>FreeTxt</ExtendedDataType>
+			<HelpText>Cached OAuth2 Bearer access token (valid for 120 minutes from issue time).</HelpText>
+			<Label>Cached Access Token</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldUtcDateTime">
+			<Name>TokenExpiresAt</Name>
+			<ExtendedDataType>TransDateTime</ExtendedDataType>
+			<HelpText>UTC timestamp when the cached access token expires.</HelpText>
+			<Label>Token Expires At (UTC)</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>MaxRetryCount</Name>
+			<HelpText>Maximum number of retry attempts for transient HTTP 5xx or network failures (HTTP 400 is never retried).</HelpText>
+			<Label>Max Retry Count</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>HttpTimeoutSeconds</Name>
+			<HelpText>HTTP request timeout in seconds for Salesforce API calls.</HelpText>
+			<Label>HTTP Timeout (Seconds)</Label>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes>
+		<AxTableIndex>
+			<Name>KeyIdx</Name>
+			<AlternateKey>Yes</AlternateKey>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>Key</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+	</Indexes>
+	<Mappings />
+	<Relations />
+	<StateMachines />
+</AxTable>

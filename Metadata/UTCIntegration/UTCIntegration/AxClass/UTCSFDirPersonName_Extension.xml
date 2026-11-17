@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>UTCSFDirPersonName_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Chain of Command extension on <c>DirPersonName</c> to detect when <c>FirstName</c>, <c>MiddleName</c>,
+/// or <c>LastName</c> is inserted or updated on a <c>DirPerson</c> party and enqueue the linked <c>CustTable</c>.
+/// </summary>
+[ExtensionOf(tableStr(DirPersonName))]
+public final class UTCSFDirPersonName_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    public void insert()
+    {
+        boolean hasName = (strTrim(this.FirstName)  != ''
+                        || strTrim(this.MiddleName) != ''
+                        || strTrim(this.LastName)   != '');
+
+        next insert();
+
+        if (hasName && this.Person)
+        {
+            UTCSFCustomerChangeHandler::tryEnqueueByPartyRecId(this.Person);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>update</Name>
+				<Source><![CDATA[
+    public void update()
+    {
+        DirPersonName origName      = this.orig();
+        boolean       hasNameChange = (this.FirstName  != origName.FirstName
+                                    || this.MiddleName != origName.MiddleName
+                                    || this.LastName   != origName.LastName);
+
+        next update();
+
+        if (hasNameChange && this.Person)
+        {
+            UTCSFCustomerChangeHandler::tryEnqueueByPartyRecId(this.Person);
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

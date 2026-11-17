@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxMenuItemDisplay xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V1">
+	<Name>UTCSFCustomerPushQueue</Name>
+	<HelpText>View and manage pending, processing, succeeded, and failed records in the Salesforce Customer Push staging queue.</HelpText>
+	<Label>Salesforce Customer Push Queue</Label>
+	<Object>UTCSFCustomerPushQueue</Object>
+</AxMenuItemDisplay>

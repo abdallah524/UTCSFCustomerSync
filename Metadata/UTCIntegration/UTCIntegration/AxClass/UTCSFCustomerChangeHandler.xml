@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>UTCSFCustomerChangeHandler</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Coordinates real-time change detection across <c>CustTable</c>, <c>DirPerson</c> / <c>DirPersonName</c>,
+/// and <c>LogisticsElectronicAddress</c>. Evaluates customer eligibility, resolves Retail POS channel
+/// metadata, enqueues records into <c>UTCSFCustomerPushQueue</c>, and dispatches post-commit async execution.
+/// </summary>
+public class UTCSFCustomerChangeHandler
+{
+    private const str TargetCompanyId = 'utc';
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>tryEnqueueCustTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks whether the supplied <c>CustTable</c> is eligible for Salesforce sync and, if so,
+    /// enqueues it in <c>UTCSFCustomerPushQueue</c> and schedules an immediate non-blocking push upon TTS commit.
+    /// </summary>
+    /// <param name = "_custTable">The <c>CustTable</c> record that was created or modified.</param>
+    public static void tryEnqueueCustTable(CustTable _custTable)
+    {
+        if (!_custTable.RecId || strLwr(_custTable.DataAreaId) != TargetCompanyId)
+        {
+            return;
+        }
+
+        try
+        {
+            changecompany(TargetCompanyId)
+            {
+                UTCSFIntegrationParameters parameters = UTCSFIntegrationParameters::find();
+                if (parameters.IsEnabled == NoYes::No)
+                {
+                    return;
+                }
+
+                UTCSFCustomerPushService pushService = UTCSFCustomerPushService::construct();
+                if (!pushService.isEligibleCustomer(_custTable))
+                {
+                    return;
+                }
+
+                UTCSFSourceChannel    sourceChannel;
+                OMOperatingUnitNumber operatingUnitNumber;
+                RetailTerminalId      terminal;
+
+                [sourceChannel, operatingUnitNumber, terminal] = UTCSFCustomerChangeHandler::resolveRetailContext(_custTable);
+
+                UTCSFCustomerPushQueue queueRecord = UTCSFCustomerPushQueue::enqueue(
+                    _custTable.AccountNum,
+                    sourceChannel,
+                    operatingUnitNumber,
+                    terminal);
+
+                if (queueRecord.RecId != 0)
+                {
+                    UTCSFCustomerChangeHandler::schedulePostCommitAsyncPush(queueRecord.RecId);
+                }
+            }
+        }
+        catch
+        {
+            // Never allow integration queue logic to abort or block core ERP/POS customer transactions
+            exceptionTextFallThrough();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>tryEnqueueByPartyRecId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Resolves the <c>CustTable</c> in company 'utc' linked to the given Global Address Book <c>DirPartyRecId</c>
+    /// and enqueues it if eligible.
+    /// </summary>
+    /// <param name = "_partyRecId">The <c>DirPartyTable</c> / <c>DirPerson</c> RecId.</param>
+    public static void tryEnqueueByPartyRecId(DirPartyRecId _partyRecId)
+    {
+        if (!_partyRecId)
+        {
+            return;
+        }
+
+        changecompany(TargetCompanyId)
+        {
+            CustTable custTable = CustTable::findByPartyRecId(_partyRecId);
+            if (custTable.RecId != 0)
+            {
+                UTCSFCustomerChangeHandler::tryEnqueueCustTable(custTable);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>tryEnqueueByLocationRecId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Resolves any <c>CustTable</c> in company 'utc' associated with the specified <c>LogisticsLocationRecId</c>
+    /// via <c>DirPartyLocation</c> and enqueues it if eligible.
+    /// </summary>
+    /// <param name = "_locationRecId">The <c>LogisticsLocation</c> RecId from <c>LogisticsElectronicAddress.Location</c>.</param>
+    public static void tryEnqueueByLocationRecId(LogisticsLocationRecId _locationRecId)
+    {
+        if (!_locationRecId)
+        {
+            return;
+        }
+
+        changecompany(TargetCompanyId)
+        {
+            DirPartyLocation dirPartyLocation;
+            CustTable        custTable;
+
+            while select custTable
+                exists join dirPartyLocation
+                    where dirPartyLocation.Party    == custTable.Party
+                       && dirPartyLocation.Location == _locationRecId
+            {
+                UTCSFCustomerChangeHandler::tryEnqueueCustTable(custTable);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>resolveRetailContext</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Resolves the originating channel (<c>SourceChannel</c>), <c>OperatingUnitNumber</c>, and <c>Terminal</c>
+    /// for a <c>CustTable</c> record using <c>RetailCustTable</c>, <c>RetailStoreTable</c>, and <c>OMOperatingUnit</c>.
+    /// </summary>
+    /// <param name = "_custTable">The customer record to inspect.</param>
+    /// <returns>Container of <c>[UTCSFSourceChannel, OMOperatingUnitNumber, RetailTerminalId]</c>.</returns>
+    public static container resolveRetailContext(CustTable _custTable)
+    {
+        UTCSFSourceChannel    sourceChannel       = 'D365FO';
+        OMOperatingUnitNumber operatingUnitNumber = '';
+        RetailTerminalId      terminal            = '';
+
+        if (_custTable.CustGroup == 'B2C E-Comm')
+        {
+            sourceChannel = 'E-Comm';
+        }
+        else if (_custTable.CustGroup == 'Retail' || _custTable.CustGroup == 'Cash')
+        {
+            sourceChannel = 'POS';
+        }
+
+        RetailStoreTable    retailStoreTable;
+        OMOperatingUnit     omOperatingUnit;
+        RetailTerminalTable retailTerminalTable;
+
+        // Check if the customer has a linked Retail store / channel on RetailCustTable or RetailTransactionTable
+        RetailTransactionTable latestRetailTrans;
+        select firstonly Store, TerminalId from latestRetailTrans
+            order by CreatedDateTime desc
+            where latestRetailTrans.CustAccount == _custTable.AccountNum;
+
+        if (latestRetailTrans.Store)
+        {
+            sourceChannel = 'POS';
+            terminal      = latestRetailTrans.TerminalId;
+
+            select firstonly OMOperatingUnitID from retailStoreTable
+                where retailStoreTable.StoreNumber == latestRetailTrans.Store
+                join OMOperatingUnitNumber from omOperatingUnit
+                    where omOperatingUnit.RecId == retailStoreTable.OMOperatingUnitID;
+
+            operatingUnitNumber = omOperatingUnit.OMOperatingUnitNumber
+                ? omOperatingUnit.OMOperatingUnitNumber
+                : latestRetailTrans.Store;
+        }
+
+        return [sourceChannel, operatingUnitNumber, terminal];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>schedulePostCommitAsyncPush</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Triggers the asynchronous push immediately if outside a transaction, or registers a post-commit hook
+    /// so the background worker only executes after the outer database transaction commits.
+    /// </summary>
+    /// <param name = "_queueRecId">RecId of the enqueued <c>UTCSFCustomerPushQueue</c> record.</param>
+    private static void schedulePostCommitAsyncPush(RecId _queueRecId)
+    {
+        if (!_queueRecId)
+        {
+            return;
+        }
+
+        if (appl.ttsLevel() == 0)
+        {
+            UTCSFCustomerPushBatchService::triggerImmediateAsyncPush(_queueRecId);
+        }
+        else
+        {
+            UTCSFPostCommitDispatcher::registerQueueItemForCommit(_queueRecId);
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

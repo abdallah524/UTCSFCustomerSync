@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxEdt xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns=""
+	i:type="AxEdtString">
+	<Name>UTCSFRequestId</Name>
+	<HelpText>Unique correlation GUID sent in the X-Request-Id HTTP header.</HelpText>
+	<Label>X-Request-Id</Label>
+	<ArrayElements />
+	<Relations />
+	<TableReferences />
+	<StringSize>64</StringSize>
+</AxEdt>

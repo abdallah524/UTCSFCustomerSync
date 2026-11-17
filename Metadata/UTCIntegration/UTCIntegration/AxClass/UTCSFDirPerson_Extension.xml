@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>UTCSFDirPerson_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Chain of Command extension on <c>DirPerson</c> to detect person name, alias, or gender updates
+/// and resolve the linked <c>CustTable</c> record in company 'utc' for Salesforce synchronization.
+/// </summary>
+[ExtensionOf(tableStr(DirPerson))]
+public final class UTCSFDirPerson_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>update</Name>
+				<Source><![CDATA[
+    public void update()
+    {
+        DirPerson origPerson    = this.orig();
+        boolean   hasNameChange = (this.Name      != origPerson.Name
+                                || this.NameAlias != origPerson.NameAlias
+                                || this.Gender    != origPerson.Gender);
+
+        next update();
+
+        if (hasNameChange)
+        {
+            UTCSFCustomerChangeHandler::tryEnqueueByPartyRecId(this.RecId);
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

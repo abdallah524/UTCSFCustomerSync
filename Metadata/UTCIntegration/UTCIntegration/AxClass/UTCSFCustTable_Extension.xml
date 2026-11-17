@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>UTCSFCustTable_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Chain of Command extension on <c>CustTable</c> to detect customer creation and updates
+/// and enqueue eligible B2C customers into <c>UTCSFCustomerPushQueue</c>.
+/// </summary>
+[ExtensionOf(tableStr(CustTable))]
+public final class UTCSFCustTable_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    public void insert()
+    {
+        next insert();
+
+        UTCSFCustomerChangeHandler::tryEnqueueCustTable(this);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>update</Name>
+				<Source><![CDATA[
+    public void update()
+    {
+        next update();
+
+        UTCSFCustomerChangeHandler::tryEnqueueCustTable(this);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>
