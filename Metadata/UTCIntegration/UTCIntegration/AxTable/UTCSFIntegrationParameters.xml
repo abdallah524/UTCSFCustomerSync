@@ -75,7 +75,7 @@ public class UTCSFIntegrationParameters extends common
     /// <param name = "_set">True when setting a new value from the UI.</param>
     /// <param name = "_value">Plaintext secret entered by the administrator.</param>
     /// <returns>Masked or decrypted secret for UI binding.</returns>
-    public edit Password editClientSecret(boolean _set, Password _value)
+    public edit UTCSFClientSecret editClientSecret(boolean _set, UTCSFClientSecret _value)
     {
         return Global::editEncryptedField(this, _value, fieldNum(UTCSFIntegrationParameters, ClientSecretEncrypted), _set);
     }

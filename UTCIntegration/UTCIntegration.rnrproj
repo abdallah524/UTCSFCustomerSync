@@ -60,6 +60,11 @@
       <Name>UTCSFClientId</Name>
       <Link>Extended Data Types\UTCSFClientId</Link>
     </Content>
+    <Content Include="AxEdt\UTCSFClientSecret">
+      <SubType>Content</SubType>
+      <Name>UTCSFClientSecret</Name>
+      <Link>Extended Data Types\UTCSFClientSecret</Link>
+    </Content>
     <Content Include="AxEdt\UTCSFRequestId">
       <SubType>Content</SubType>
       <Name>UTCSFRequestId</Name>
