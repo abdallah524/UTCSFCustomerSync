@@ -236,7 +236,6 @@ public class UTCSFIntegrationParameters extends FormRun
 					<AxFormControl xmlns=""
 						i:type="AxFormTabPageControl">
 						<Name>EndpointsFastTab</Name>
-						<Caption>Endpoints &amp; Runtime Settings</Caption>
 						<Pattern>Custom</Pattern>
 						<Type>TabPage</Type>
 						<WidthMode>SizeToAvailable</WidthMode>
@@ -246,58 +245,58 @@ public class UTCSFIntegrationParameters extends FormRun
 							<AxFormControl xmlns=""
 								i:type="AxFormCheckBoxControl">
 								<Name>IsEnabled</Name>
-								<DataField>IsEnabled</DataField>
-								<DataSource>UTCSFIntegrationParameters</DataSource>
 								<Type>CheckBox</Type>
 								<FormControlExtension
 									i:nil="true" />
+								<DataField>IsEnabled</DataField>
+								<DataSource>UTCSFIntegrationParameters</DataSource>
 							</AxFormControl>
 							<AxFormControl xmlns=""
 								i:type="AxFormStringControl">
 								<Name>TokenUrl</Name>
-								<DataField>TokenUrl</DataField>
-								<DataSource>UTCSFIntegrationParameters</DataSource>
 								<Type>String</Type>
 								<WidthMode>SizeToAvailable</WidthMode>
 								<FormControlExtension
 									i:nil="true" />
+								<DataField>TokenUrl</DataField>
+								<DataSource>UTCSFIntegrationParameters</DataSource>
 							</AxFormControl>
 							<AxFormControl xmlns=""
 								i:type="AxFormStringControl">
 								<Name>ApiEndpointUrl</Name>
-								<DataField>ApiEndpointUrl</DataField>
-								<DataSource>UTCSFIntegrationParameters</DataSource>
 								<Type>String</Type>
 								<WidthMode>SizeToAvailable</WidthMode>
 								<FormControlExtension
 									i:nil="true" />
+								<DataField>ApiEndpointUrl</DataField>
+								<DataSource>UTCSFIntegrationParameters</DataSource>
 							</AxFormControl>
 							<AxFormControl xmlns=""
 								i:type="AxFormIntegerControl">
 								<Name>MaxRetryCount</Name>
-								<DataField>MaxRetryCount</DataField>
-								<DataSource>UTCSFIntegrationParameters</DataSource>
 								<Type>Integer</Type>
 								<FormControlExtension
 									i:nil="true" />
+								<DataField>MaxRetryCount</DataField>
+								<DataSource>UTCSFIntegrationParameters</DataSource>
 							</AxFormControl>
 							<AxFormControl xmlns=""
 								i:type="AxFormIntegerControl">
 								<Name>HttpTimeoutSeconds</Name>
-								<DataField>HttpTimeoutSeconds</DataField>
-								<DataSource>UTCSFIntegrationParameters</DataSource>
 								<Type>Integer</Type>
 								<FormControlExtension
 									i:nil="true" />
+								<DataField>HttpTimeoutSeconds</DataField>
+								<DataSource>UTCSFIntegrationParameters</DataSource>
 							</AxFormControl>
 						</Controls>
+						<Caption>Endpoints &amp; Runtime Settings</Caption>
 						<ColumnsMode>Fill</ColumnsMode>
 						<FastTabExpanded>Yes</FastTabExpanded>
 					</AxFormControl>
 					<AxFormControl xmlns=""
 						i:type="AxFormTabPageControl">
 						<Name>OAuthCredentialsFastTab</Name>
-						<Caption>OAuth2 Client Credentials</Caption>
 						<Pattern>Custom</Pattern>
 						<Type>TabPage</Type>
 						<WidthMode>SizeToAvailable</WidthMode>
@@ -307,33 +306,33 @@ public class UTCSFIntegrationParameters extends FormRun
 							<AxFormControl xmlns=""
 								i:type="AxFormStringControl">
 								<Name>ClientId</Name>
-								<DataField>ClientId</DataField>
-								<DataSource>UTCSFIntegrationParameters</DataSource>
 								<Type>String</Type>
 								<WidthMode>SizeToAvailable</WidthMode>
 								<FormControlExtension
 									i:nil="true" />
+								<DataField>ClientId</DataField>
+								<DataSource>UTCSFIntegrationParameters</DataSource>
 							</AxFormControl>
 							<AxFormControl xmlns=""
 								i:type="AxFormStringControl">
 								<Name>ClientSecretEdit</Name>
-								<DataMethod>editClientSecret</DataMethod>
-								<DataSource>UTCSFIntegrationParameters</DataSource>
-								<Label>Client Secret</Label>
-								<PasswordStyle>Yes</PasswordStyle>
 								<Type>String</Type>
 								<WidthMode>SizeToAvailable</WidthMode>
 								<FormControlExtension
 									i:nil="true" />
+								<DataMethod>editClientSecret</DataMethod>
+								<DataSource>UTCSFIntegrationParameters</DataSource>
+								<Label>Client Secret</Label>
+								<PasswordStyle>Yes</PasswordStyle>
 							</AxFormControl>
 						</Controls>
+						<Caption>OAuth2 Client Credentials</Caption>
 						<ColumnsMode>Fill</ColumnsMode>
 						<FastTabExpanded>Yes</FastTabExpanded>
 					</AxFormControl>
 					<AxFormControl xmlns=""
 						i:type="AxFormTabPageControl">
 						<Name>TokenCacheFastTab</Name>
-						<Caption>OAuth2 Token Cache Status</Caption>
 						<Pattern>Custom</Pattern>
 						<Type>TabPage</Type>
 						<WidthMode>SizeToAvailable</WidthMode>
@@ -344,24 +343,25 @@ public class UTCSFIntegrationParameters extends FormRun
 								i:type="AxFormDateTimeControl">
 								<Name>TokenExpiresAt</Name>
 								<AllowEdit>No</AllowEdit>
-								<DataField>TokenExpiresAt</DataField>
-								<DataSource>UTCSFIntegrationParameters</DataSource>
 								<Type>DateTime</Type>
 								<FormControlExtension
 									i:nil="true" />
+								<DataField>TokenExpiresAt</DataField>
+								<DataSource>UTCSFIntegrationParameters</DataSource>
 							</AxFormControl>
 							<AxFormControl xmlns=""
 								i:type="AxFormStringControl">
 								<Name>TokenCacheStatus</Name>
 								<AllowEdit>No</AllowEdit>
-								<DataMethod>tokenCacheStatus</DataMethod>
-								<DataSource>UTCSFIntegrationParameters</DataSource>
-								<Label>Token Cache Status</Label>
 								<Type>String</Type>
 								<FormControlExtension
 									i:nil="true" />
+								<DataMethod>tokenCacheStatus</DataMethod>
+								<DataSource>UTCSFIntegrationParameters</DataSource>
+								<Label>Token Cache Status</Label>
 							</AxFormControl>
 						</Controls>
+						<Caption>OAuth2 Token Cache Status</Caption>
 						<ColumnsMode>Fill</ColumnsMode>
 						<FastTabExpanded>Yes</FastTabExpanded>
 					</AxFormControl>

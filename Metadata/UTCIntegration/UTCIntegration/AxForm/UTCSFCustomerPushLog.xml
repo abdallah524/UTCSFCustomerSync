@@ -369,7 +369,6 @@ public class UTCSFCustomerPushLog extends FormRun
 					<AxFormControl xmlns=""
 						i:type="AxFormTabPageControl">
 						<Name>RequestPayloadTabPage</Name>
-						<Caption>Outbound Request Payload (JSON)</Caption>
 						<Type>TabPage</Type>
 						<FormControlExtension
 							i:nil="true" />
@@ -377,21 +376,21 @@ public class UTCSFCustomerPushLog extends FormRun
 							<AxFormControl xmlns=""
 								i:type="AxFormStringControl">
 								<Name>RequestPayloadControl</Name>
-								<DataField>RequestPayload</DataField>
-								<DataSource>UTCSFCustomerPushLog</DataSource>
-								<MultiLine>Yes</MultiLine>
 								<Type>String</Type>
 								<WidthMode>SizeToAvailable</WidthMode>
 								<FormControlExtension
 									i:nil="true" />
+								<DataField>RequestPayload</DataField>
+								<DataSource>UTCSFCustomerPushLog</DataSource>
+								<MultiLine>Yes</MultiLine>
 							</AxFormControl>
 						</Controls>
+						<Caption>Outbound Request Payload (JSON)</Caption>
 						<ColumnsMode>Fill</ColumnsMode>
 					</AxFormControl>
 					<AxFormControl xmlns=""
 						i:type="AxFormTabPageControl">
 						<Name>ResponsePayloadTabPage</Name>
-						<Caption>Salesforce Response Payload (JSON)</Caption>
 						<Type>TabPage</Type>
 						<FormControlExtension
 							i:nil="true" />
@@ -399,15 +398,16 @@ public class UTCSFCustomerPushLog extends FormRun
 							<AxFormControl xmlns=""
 								i:type="AxFormStringControl">
 								<Name>ResponsePayloadControl</Name>
-								<DataField>ResponsePayload</DataField>
-								<DataSource>UTCSFCustomerPushLog</DataSource>
-								<MultiLine>Yes</MultiLine>
 								<Type>String</Type>
 								<WidthMode>SizeToAvailable</WidthMode>
 								<FormControlExtension
 									i:nil="true" />
+								<DataField>ResponsePayload</DataField>
+								<DataSource>UTCSFCustomerPushLog</DataSource>
+								<MultiLine>Yes</MultiLine>
 							</AxFormControl>
 						</Controls>
+						<Caption>Salesforce Response Payload (JSON)</Caption>
 						<ColumnsMode>Fill</ColumnsMode>
 					</AxFormControl>
 				</Controls>
