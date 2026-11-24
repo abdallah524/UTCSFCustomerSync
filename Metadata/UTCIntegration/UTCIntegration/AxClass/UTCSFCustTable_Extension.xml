@@ -9,7 +9,7 @@
 /// Uses <c>DataEventHandler</c> instead of CoC so it remains resilient to optional parameter
 /// changes on <c>CustTable.insert()</c> and <c>CustTable.update()</c> across D365 F&amp;O versions.
 /// </summary>
-public final class UTCSFCustTable_Extension
+public static class UTCSFCustTable_Extension
 {
 }
 ]]></Declaration>
