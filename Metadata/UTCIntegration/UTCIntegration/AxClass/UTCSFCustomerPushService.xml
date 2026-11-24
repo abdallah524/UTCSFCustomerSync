@@ -130,9 +130,10 @@ public class UTCSFCustomerPushService
 
         HttpClient httpClient = this.getHttpClient(parameters.HttpTimeoutSeconds);
 
+        str trimmedClientId = strLRTrim(parameters.ClientId);
         str formBody = strFmt(
             'grant_type=client_credentials&client_id=%1&client_secret=%2',
-            System.Uri::EscapeDataString(strLRTrim(parameters.ClientId)),
+            System.Uri::EscapeDataString(trimmedClientId),
             System.Uri::EscapeDataString(clientSecret));
 
         str responseBody;
@@ -142,6 +143,8 @@ public class UTCSFCustomerPushService
         {
             using (StringContent content = new StringContent(formBody, Encoding::UTF8, 'application/x-www-form-urlencoded'))
             {
+                HttpContentHeaders contentHeaders = content.Headers;
+                contentHeaders.ContentType = new MediaTypeHeaderValue('application/x-www-form-urlencoded');
                 requestMessage.Content = content;
 
                 using (HttpResponseMessage responseMessage = httpClient.SendAsync(requestMessage).GetAwaiter().GetResult())
@@ -154,7 +157,12 @@ public class UTCSFCustomerPushService
 
         if (httpStatus < 200 || httpStatus >= 300)
         {
-            throw error(strFmt('Salesforce OAuth2 token acquisition failed with HTTP %1: %2', httpStatus, responseBody));
+            throw error(strFmt(
+                'Salesforce OAuth2 token acquisition failed with HTTP %1 (ClientId len=%3, ClientSecret len=%4): %2',
+                httpStatus,
+                responseBody,
+                strLen(trimmedClientId),
+                strLen(clientSecret)));
         }
 
         JObject tokenJson   = JObject::Parse(responseBody);
