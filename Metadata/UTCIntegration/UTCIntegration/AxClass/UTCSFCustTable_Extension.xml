@@ -4,44 +4,55 @@
 	<SourceCode>
 		<Declaration><![CDATA[
 /// <summary>
-/// Chain of Command extension on <c>CustTable</c> to detect customer creation and updates
+/// Data event handler on <c>CustTable</c> to detect customer creation and relevant updates
 /// and enqueue eligible B2C customers into <c>UTCSFCustomerPushQueue</c>.
+/// Uses <c>DataEventHandler</c> instead of CoC so it remains resilient to optional parameter
+/// changes on <c>CustTable.insert()</c> and <c>CustTable.update()</c> across D365 F&amp;O versions.
 /// </summary>
-[ExtensionOf(tableStr(CustTable))]
 public final class UTCSFCustTable_Extension
 {
 }
 ]]></Declaration>
 		<Methods>
 			<Method>
-				<Name>insert</Name>
+				<Name>CustTable_onInserted</Name>
 				<Source><![CDATA[
-    public void insert()
+    [DataEventHandler(tableStr(CustTable), DataEventType::Inserted)]
+    public static void CustTable_onInserted(Common _sender, DataEventArgs _e)
     {
-        next insert();
+        CustTable custTable = _sender as CustTable;
 
-        UTCSFCustomerChangeHandler::tryEnqueueCustTable(this);
+        if (custTable)
+        {
+            UTCSFCustomerChangeHandler::tryEnqueueCustTable(custTable);
+        }
     }
 
 ]]></Source>
 			</Method>
 			<Method>
-				<Name>update</Name>
+				<Name>CustTable_onUpdating</Name>
 				<Source><![CDATA[
-    public void update()
+    [DataEventHandler(tableStr(CustTable), DataEventType::Updating)]
+    public static void CustTable_onUpdating(Common _sender, DataEventArgs _e)
     {
-        CustTable origCustTable = this.orig();
+        CustTable custTable = _sender as CustTable;
 
-        boolean hasRelevantChange = (this.CustGroup  != origCustTable.CustGroup
-                                  || this.Blocked    != origCustTable.Blocked
-                                  || this.Party      != origCustTable.Party
-                                  || this.AccountNum != origCustTable.AccountNum);
+        if (!custTable)
+        {
+            return;
+        }
 
-        next update();
+        CustTable origCustTable = custTable.orig();
+
+        boolean hasRelevantChange = (custTable.CustGroup  != origCustTable.CustGroup
+                                  || custTable.Blocked    != origCustTable.Blocked
+                                  || custTable.Party      != origCustTable.Party
+                                  || custTable.AccountNum != origCustTable.AccountNum);
 
         if (hasRelevantChange)
         {
-            UTCSFCustomerChangeHandler::tryEnqueueCustTable(this);
+            UTCSFCustomerChangeHandler::tryEnqueueCustTable(custTable);
         }
     }
 
