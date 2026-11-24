@@ -319,16 +319,47 @@ public class UTCSFCustomerPushService
         LogisticsElectronicAddress primaryEmail   = this.findPrimaryElectronicAddress(dirPartyTable, LogisticsElectronicAddressMethodType::Email);
         LogisticsPostalAddress     primaryAddress = DirParty::primaryPostalAddress(_custTable.Party);
 
-        str genderStr = enum2Symbol(enumNum(Gender), dirPerson.Gender);
-        if (!genderStr)
+        str genderStr = 'Unknown';
+        switch (dirPerson.Gender)
         {
-            genderStr = 'Unknown';
+            case Gender::Male:
+                genderStr = 'Male';
+                break;
+            case Gender::Female:
+                genderStr = 'Female';
+                break;
+            case Gender::NonSpecific:
+                genderStr = 'NonSpecific';
+                break;
+            default:
+                genderStr = 'Unknown';
+                break;
         }
 
-        str onHoldStatusStr = enum2Symbol(enumNum(CustVendorBlocked), _custTable.Blocked);
-        if (!onHoldStatusStr)
+        str onHoldStatusStr = 'No';
+        switch (_custTable.Blocked)
         {
-            onHoldStatusStr = 'No';
+            case CustVendorBlocked::No:
+                onHoldStatusStr = 'No';
+                break;
+            case CustVendorBlocked::Invoice:
+                onHoldStatusStr = 'Invoice';
+                break;
+            case CustVendorBlocked::All:
+                onHoldStatusStr = 'All';
+                break;
+            case CustVendorBlocked::Payment:
+                onHoldStatusStr = 'Payment';
+                break;
+            case CustVendorBlocked::Requisition:
+                onHoldStatusStr = 'Requisition';
+                break;
+            case CustVendorBlocked::Never:
+                onHoldStatusStr = 'Never';
+                break;
+            default:
+                onHoldStatusStr = 'No';
+                break;
         }
 
         str phoneIsMobileStr = (primaryPhone.RecId != 0 && primaryPhone.IsMobilePhone == NoYes::Yes) ? 'Yes' : 'No';
@@ -646,8 +677,9 @@ public class UTCSFCustomerPushService
 
         using (HttpRequestMessage requestMessage = new HttpRequestMessage(new HttpMethod('POST'), _endpointUrl))
         {
-            requestMessage.Headers.Authorization = new AuthenticationHeaderValue('Bearer', _accessToken);
-            requestMessage.Headers.Add('X-Request-Id', _requestId);
+            HttpRequestHeaders headers = requestMessage.Headers;
+            headers.Authorization = new AuthenticationHeaderValue('Bearer', _accessToken);
+            headers.Add('X-Request-Id', _requestId);
 
             // Encoding::UTF8 with media type "application/json" sets "Content-Type: application/json; charset=utf-8"
             using (StringContent content = new StringContent(_jsonPayload, Encoding::UTF8, 'application/json'))
@@ -736,8 +768,9 @@ public class UTCSFCustomerPushService
 
         using (HttpRequestMessage requestMessage = new HttpRequestMessage(new HttpMethod('GET'), _endpointUrl))
         {
-            requestMessage.Headers.Authorization = new AuthenticationHeaderValue('Bearer', _accessToken);
-            requestMessage.Headers.Add('X-Request-Id', _requestId);
+            HttpRequestHeaders headers = requestMessage.Headers;
+            headers.Authorization = new AuthenticationHeaderValue('Bearer', _accessToken);
+            headers.Add('X-Request-Id', _requestId);
 
             using (HttpResponseMessage responseMessage = httpClient.SendAsync(requestMessage).GetAwaiter().GetResult())
             {

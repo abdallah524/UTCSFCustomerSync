@@ -209,6 +209,7 @@ public class UTCSFCustomerPushQueue extends FormRun
 				i:type="AxFormGridControl">
 				<Name>QueueGrid</Name>
 				<DataSource>UTCSFCustomerPushQueue</DataSource>
+				<Style>Tabular</Style>
 				<Type>Grid</Type>
 				<FormControlExtension
 					i:nil="true" />

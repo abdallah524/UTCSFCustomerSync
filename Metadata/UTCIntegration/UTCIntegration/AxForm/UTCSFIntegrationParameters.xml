@@ -167,6 +167,42 @@ public class UTCSFIntegrationParameters extends FormRun
 		<Style xmlns="">TableOfContents</Style>
 		<Controls xmlns="">
 			<AxFormControl xmlns=""
+				i:type="AxFormActionPaneControl">
+				<Name>ParametersActionPane</Name>
+				<Type>ActionPane</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormButtonGroupControl">
+						<Name>DiagnosticsButtonGroup</Name>
+						<Type>ButtonGroup</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonControl">
+								<Name>TestConnectionButton</Name>
+								<HelpText>Acquires an OAuth2 token and invokes the Salesforce GET health check endpoint.</HelpText>
+								<Text>Test Connection &amp; Health Check</Text>
+								<Type>Button</Type>
+								<FormControlExtension
+									i:nil="true" />
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonControl">
+								<Name>ClearTokenCacheButton</Name>
+								<HelpText>Clears the cached 120-minute OAuth2 Bearer token and forces re-authentication on the next API call.</HelpText>
+								<Text>Clear Cached Token</Text>
+								<Type>Button</Type>
+								<FormControlExtension
+									i:nil="true" />
+							</AxFormControl>
+						</Controls>
+					</AxFormControl>
+				</Controls>
+			</AxFormControl>
+			<AxFormControl xmlns=""
 				i:type="AxFormTabControl">
 				<Name>ParametersTab</Name>
 				<AlignControl>No</AlignControl>
@@ -212,43 +248,6 @@ public class UTCSFIntegrationParameters extends FormRun
 								<Style>TOCTitleContainer</Style>
 							</AxFormControl>
 							<AxFormControl xmlns=""
-								i:type="AxFormActionPaneControl">
-								<Name>ParametersActionPane</Name>
-								<Type>ActionPane</Type>
-								<FormControlExtension
-									i:nil="true" />
-								<Controls>
-									<AxFormControl xmlns=""
-										i:type="AxFormButtonGroupControl">
-										<Name>DiagnosticsButtonGroup</Name>
-										<Type>ButtonGroup</Type>
-										<FormControlExtension
-											i:nil="true" />
-										<Controls>
-											<AxFormControl xmlns=""
-												i:type="AxFormButtonControl">
-												<Name>TestConnectionButton</Name>
-												<HelpText>Acquires an OAuth2 token and invokes the Salesforce GET health check endpoint.</HelpText>
-												<Text>Test Connection &amp; Health Check</Text>
-												<Type>Button</Type>
-												<FormControlExtension
-													i:nil="true" />
-											</AxFormControl>
-											<AxFormControl xmlns=""
-												i:type="AxFormButtonControl">
-												<Name>ClearTokenCacheButton</Name>
-												<HelpText>Clears the cached 120-minute OAuth2 Bearer token and forces re-authentication on the next API call.</HelpText>
-												<Text>Clear Cached Token</Text>
-												<Type>Button</Type>
-												<FormControlExtension
-													i:nil="true" />
-											</AxFormControl>
-										</Controls>
-									</AxFormControl>
-								</Controls>
-								<Style>Strip</Style>
-							</AxFormControl>
-							<AxFormControl xmlns=""
 								i:type="AxFormTabControl">
 								<Name>FastTabs</Name>
 								<Type>Tab</Type>
@@ -259,6 +258,7 @@ public class UTCSFIntegrationParameters extends FormRun
 										i:type="AxFormTabPageControl">
 										<Name>EndpointsFastTab</Name>
 										<Caption>Endpoints &amp; Runtime Settings</Caption>
+										<Pattern>Custom</Pattern>
 										<Type>TabPage</Type>
 										<FormControlExtension
 											i:nil="true" />
@@ -315,6 +315,7 @@ public class UTCSFIntegrationParameters extends FormRun
 										i:type="AxFormTabPageControl">
 										<Name>OAuthCredentialsFastTab</Name>
 										<Caption>OAuth2 Client Credentials</Caption>
+										<Pattern>Custom</Pattern>
 										<Type>TabPage</Type>
 										<FormControlExtension
 											i:nil="true" />
@@ -346,6 +347,7 @@ public class UTCSFIntegrationParameters extends FormRun
 										i:type="AxFormTabPageControl">
 										<Name>TokenCacheFastTab</Name>
 										<Caption>OAuth2 Token Cache Status</Caption>
+										<Pattern>Custom</Pattern>
 										<Type>TabPage</Type>
 										<FormControlExtension
 											i:nil="true" />

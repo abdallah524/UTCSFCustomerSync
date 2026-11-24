@@ -3,7 +3,7 @@
 	<Name>UTCSFCustomerPushStatus</Name>
 	<Help>Processing status of the outbound Salesforce customer push record.</Help>
 	<Label>Salesforce Push Status</Label>
-	<UseEnumValue>Yes</UseEnumValue>
+	<UseEnumValue>No</UseEnumValue>
 	<EnumValues>
 		<AxEnumValue>
 			<Name>Pending</Name>
