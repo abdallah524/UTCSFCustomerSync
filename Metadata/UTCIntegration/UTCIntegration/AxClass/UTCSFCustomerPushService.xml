@@ -71,7 +71,7 @@ public class UTCSFCustomerPushService
     /// <returns>Configured <c>HttpClient</c> instance.</returns>
     private HttpClient getHttpClient(int _timeoutSeconds = 30)
     {
-        ServicePointManager::SecurityProtocol = ServicePointManager::SecurityProtocol | SecurityProtocolType::Tls12;
+        ServicePointManager::SecurityProtocol = SecurityProtocolType::Tls12;
 
         int timeoutSec = _timeoutSeconds > 0 ? _timeoutSeconds : 30;
 
@@ -138,7 +138,7 @@ public class UTCSFCustomerPushService
         str responseBody;
         int httpStatus;
 
-        using (HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod::Post, strLRTrim(parameters.TokenUrl)))
+        using (HttpRequestMessage requestMessage = new HttpRequestMessage(new HttpMethod('POST'), strLRTrim(parameters.TokenUrl)))
         {
             using (StringContent content = new StringContent(formBody, Encoding::UTF8, 'application/x-www-form-urlencoded'))
             {
@@ -644,7 +644,7 @@ public class UTCSFCustomerPushService
         str        responseBody;
         int        httpStatus;
 
-        using (HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod::Post, _endpointUrl))
+        using (HttpRequestMessage requestMessage = new HttpRequestMessage(new HttpMethod('POST'), _endpointUrl))
         {
             requestMessage.Headers.Authorization = new AuthenticationHeaderValue('Bearer', _accessToken);
             requestMessage.Headers.Add('X-Request-Id', _requestId);
@@ -734,7 +734,7 @@ public class UTCSFCustomerPushService
         str        responseBody;
         int        httpStatus;
 
-        using (HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod::Get, _endpointUrl))
+        using (HttpRequestMessage requestMessage = new HttpRequestMessage(new HttpMethod('GET'), _endpointUrl))
         {
             requestMessage.Headers.Authorization = new AuthenticationHeaderValue('Bearer', _accessToken);
             requestMessage.Headers.Add('X-Request-Id', _requestId);
