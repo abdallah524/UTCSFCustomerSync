@@ -66,7 +66,9 @@ public class UTCSFCustomerChangeHandler
         }
         catch
         {
-            // Never allow integration queue logic to abort or block core ERP/POS customer transactions
+            // Note: In X++, catch blocks only intercept exceptions when appl.ttsLevel() == 0.
+            // Inside an active TTS transaction, enqueue() is intentionally append-only and lightweight
+            // so it does not acquire conflicting locks on existing queue rows.
             exceptionTextFallThrough();
         }
     }
@@ -137,7 +139,7 @@ public class UTCSFCustomerChangeHandler
 				<Source><![CDATA[
     /// <summary>
     /// Resolves the originating channel (<c>SourceChannel</c>), <c>OperatingUnitNumber</c>, and <c>Terminal</c>
-    /// for a <c>CustTable</c> record using <c>RetailCustTable</c>, <c>RetailStoreTable</c>, and <c>OMOperatingUnit</c>.
+    /// for a <c>CustTable</c> record without executing heavy <c>RetailTransactionTable</c> scans on the write path.
     /// </summary>
     /// <param name = "_custTable">The customer record to inspect.</param>
     /// <returns>Container of <c>[UTCSFSourceChannel, OMOperatingUnitNumber, RetailTerminalId]</c>.</returns>
@@ -154,31 +156,6 @@ public class UTCSFCustomerChangeHandler
         else if (_custTable.CustGroup == 'Retail' || _custTable.CustGroup == 'Cash')
         {
             sourceChannel = 'POS';
-        }
-
-        RetailStoreTable    retailStoreTable;
-        OMOperatingUnit     omOperatingUnit;
-        RetailTerminalTable retailTerminalTable;
-
-        // Check if the customer has a linked Retail store / channel on RetailCustTable or RetailTransactionTable
-        RetailTransactionTable latestRetailTrans;
-        select firstonly Store, TerminalId from latestRetailTrans
-            order by CreatedDateTime desc
-            where latestRetailTrans.CustAccount == _custTable.AccountNum;
-
-        if (latestRetailTrans.Store)
-        {
-            sourceChannel = 'POS';
-            terminal      = latestRetailTrans.TerminalId;
-
-            select firstonly OMOperatingUnitID from retailStoreTable
-                where retailStoreTable.StoreNumber == latestRetailTrans.Store
-                join OMOperatingUnitNumber from omOperatingUnit
-                    where omOperatingUnit.RecId == retailStoreTable.OMOperatingUnitID;
-
-            operatingUnitNumber = omOperatingUnit.OMOperatingUnitNumber
-                ? omOperatingUnit.OMOperatingUnitNumber
-                : latestRetailTrans.Store;
         }
 
         return [sourceChannel, operatingUnitNumber, terminal];

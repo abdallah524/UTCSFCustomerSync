@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxEdt xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns=""
+	i:type="AxEdtString">
+	<Name>UTCSFJsonPayload</Name>
+	<HelpText>Unbounded memo string for storing full UTF-8 JSON payloads and diagnostic error details without truncation.</HelpText>
+	<Label>JSON Payload</Label>
+	<ArrayElements />
+	<Relations />
+	<TableReferences />
+	<StringSize>-1</StringSize>
+</AxEdt>

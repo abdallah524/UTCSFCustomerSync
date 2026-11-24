@@ -18,9 +18,9 @@ public final class UTCSFDirPersonName_Extension
 				<Source><![CDATA[
     public void insert()
     {
-        boolean hasName = (strTrim(this.FirstName)  != ''
-                        || strTrim(this.MiddleName) != ''
-                        || strTrim(this.LastName)   != '');
+        boolean hasName = (strLRTrim(this.FirstName)  != ''
+                        || strLRTrim(this.MiddleName) != ''
+                        || strLRTrim(this.LastName)   != '');
 
         next insert();
 

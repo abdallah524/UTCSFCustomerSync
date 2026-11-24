@@ -22,10 +22,11 @@ public class UTCSFCustomerPushService
     private const str CustGroupRetail          = 'Retail';
     private const str CustGroupCash            = 'Cash';
     private const str CustGroupB2CEComm        = 'B2C E-Comm';
-    private const int TokenLifetimeMinutes     = 120;
+    private const int TokenLifetimeMinutes      = 120;
     private const int TokenRefreshBufferMinutes = 5;
 
-    private static HttpClient sharedHttpClient;
+    private HttpClient httpClientInstance;
+    private int        configuredTimeoutSeconds;
 
 }
 ]]></Declaration>
@@ -41,25 +42,52 @@ public class UTCSFCustomerPushService
 ]]></Source>
 			</Method>
 			<Method>
+				<Name>dispose</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Disposes the underlying <c>System.Net.Http.HttpClient</c> owned by this service instance
+    /// to prevent socket exhaustion across short-lived <c>Global::runAsync</c> sessions.
+    /// </summary>
+    public void dispose()
+    {
+        if (httpClientInstance != null)
+        {
+            httpClientInstance.Dispose();
+            httpClientInstance       = null;
+            configuredTimeoutSeconds = 0;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
 				<Name>getHttpClient</Name>
 				<Source><![CDATA[
     /// <summary>
-    /// Returns a singleton <c>System.Net.Http.HttpClient</c> configured with TLS 1.2/1.3.
+    /// Returns an <c>System.Net.Http.HttpClient</c> scoped to this service instance (reused across
+    /// batch iterations and disposed via <c>dispose()</c>) with TLS 1.2 enabled.
     /// </summary>
     /// <param name = "_timeoutSeconds">Request timeout in seconds.</param>
     /// <returns>Configured <c>HttpClient</c> instance.</returns>
-    private static HttpClient getHttpClient(int _timeoutSeconds = 30)
+    private HttpClient getHttpClient(int _timeoutSeconds = 30)
     {
-        ServicePointManager::SecurityProtocol = SecurityProtocolType::Tls12 | SecurityProtocolType::Tls13;
+        ServicePointManager::SecurityProtocol = ServicePointManager::SecurityProtocol | SecurityProtocolType::Tls12;
 
-        if (sharedHttpClient == null)
+        int timeoutSec = _timeoutSeconds > 0 ? _timeoutSeconds : 30;
+
+        if (httpClientInstance == null || configuredTimeoutSeconds != timeoutSec)
         {
-            sharedHttpClient = new HttpClient();
-            int timeoutSec = _timeoutSeconds > 0 ? _timeoutSeconds : 30;
-            sharedHttpClient.Timeout = System.TimeSpan::FromSeconds(timeoutSec);
+            if (httpClientInstance != null)
+            {
+                httpClientInstance.Dispose();
+            }
+
+            httpClientInstance       = new HttpClient();
+            httpClientInstance.Timeout = System.TimeSpan::FromSeconds(timeoutSec);
+            configuredTimeoutSeconds = timeoutSec;
         }
 
-        return sharedHttpClient;
+        return httpClientInstance;
     }
 
 ]]></Source>
@@ -69,7 +97,7 @@ public class UTCSFCustomerPushService
 				<Source><![CDATA[
     /// <summary>
     /// Retrieves a valid OAuth2 Bearer access token for Salesforce.
-    /// Returns the cached token from <c>UTCSFIntegrationParameters</c> if it has not expired;
+    /// Returns the encrypted cached token from <c>UTCSFIntegrationParameters</c> if it has not expired;
     /// otherwise requests a new token via the OAuth2 <c>client_credentials</c> grant and caches it for 120 minutes.
     /// </summary>
     /// <param name = "_forceRefresh">If true, bypasses the cached token and acquires a fresh token from Salesforce.</param>
@@ -83,34 +111,46 @@ public class UTCSFCustomerPushService
             parameters = UTCSFIntegrationParameters::find();
         }
 
-        if (!parameters.TokenUrl || !parameters.ClientId || !parameters.getClientSecret())
+        str clientSecret = parameters.getClientSecret();
+        if (!parameters.TokenUrl || !parameters.ClientId || !clientSecret)
         {
             throw error('Salesforce Integration Parameters (TokenUrl, ClientId, ClientSecret) are not configured.');
         }
 
         utcdatetime nowUtc       = DateTimeUtil::utcNow();
         utcdatetime safeExpiry   = DateTimeUtil::addMinutes(nowUtc, TokenRefreshBufferMinutes);
+        str         cachedToken  = parameters.getCachedAccessToken();
 
         if (!_forceRefresh
-            && parameters.CachedAccessToken != ''
+            && cachedToken != ''
             && parameters.TokenExpiresAt > safeExpiry)
         {
-            return parameters.CachedAccessToken;
+            return cachedToken;
         }
 
-        HttpClient httpClient = UTCSFCustomerPushService::getHttpClient(parameters.HttpTimeoutSeconds);
+        HttpClient httpClient = this.getHttpClient(parameters.HttpTimeoutSeconds);
 
         str formBody = strFmt(
             'grant_type=client_credentials&client_id=%1&client_secret=%2',
-            System.Uri::EscapeDataString(strTrim(parameters.ClientId)),
-            System.Uri::EscapeDataString(parameters.getClientSecret()));
+            System.Uri::EscapeDataString(strLRTrim(parameters.ClientId)),
+            System.Uri::EscapeDataString(clientSecret));
 
-        HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod::Post, strTrim(parameters.TokenUrl));
-        requestMessage.Content = new StringContent(formBody, Encoding::UTF8, 'application/x-www-form-urlencoded');
+        str responseBody;
+        int httpStatus;
 
-        HttpResponseMessage responseMessage = httpClient.SendAsync(requestMessage).GetAwaiter().GetResult();
-        str                 responseBody    = responseMessage.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-        int                 httpStatus      = System.Convert::ToInt32(responseMessage.StatusCode);
+        using (HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod::Post, strLRTrim(parameters.TokenUrl)))
+        {
+            using (StringContent content = new StringContent(formBody, Encoding::UTF8, 'application/x-www-form-urlencoded'))
+            {
+                requestMessage.Content = content;
+
+                using (HttpResponseMessage responseMessage = httpClient.SendAsync(requestMessage).GetAwaiter().GetResult())
+                {
+                    responseBody = responseMessage.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                    httpStatus   = System.Convert::ToInt32(responseMessage.StatusCode);
+                }
+            }
+        }
 
         if (httpStatus < 200 || httpStatus >= 300)
         {
@@ -181,7 +221,7 @@ public class UTCSFCustomerPushService
 
         // Rule 4: At least one name field (PersonFirstName or PersonLastName) must be populated
         DirPersonName dirPersonName = DirPersonName::find(dirPerson.RecId);
-        if (strTrim(dirPersonName.FirstName) == '' && strTrim(dirPersonName.LastName) == '')
+        if (strLRTrim(dirPersonName.FirstName) == '' && strLRTrim(dirPersonName.LastName) == '')
         {
             return false;
         }
@@ -220,7 +260,7 @@ public class UTCSFCustomerPushService
 
         rootObject.Add('customers', customersArray);
 
-        return rootObject.ToString(Formatting::Indented);
+        return rootObject.ToString(Formatting::None);
     }
 
 ]]></Source>
@@ -255,7 +295,7 @@ public class UTCSFCustomerPushService
 
         rootObject.Add('customers', customersArray);
 
-        return rootObject.ToString(Formatting::Indented);
+        return rootObject.ToString(Formatting::None);
     }
 
 ]]></Source>
@@ -415,6 +455,10 @@ public class UTCSFCustomerPushService
 
         if (parameters.IsEnabled == NoYes::No)
         {
+            changecompany(TargetCompanyId)
+            {
+                UTCSFCustomerPushQueue::resetToPending(_queueRecord.RecId);
+            }
             return false;
         }
 
@@ -445,7 +489,7 @@ public class UTCSFCustomerPushService
             str accessToken = this.getAccessToken(false);
 
             [httpStatus, responsePayload] = this.sendPostRequest(
-                strTrim(parameters.ApiEndpointUrl),
+                strLRTrim(parameters.ApiEndpointUrl),
                 accessToken,
                 requestId,
                 requestPayload,
@@ -457,7 +501,7 @@ public class UTCSFCustomerPushService
                 accessToken = this.getAccessToken(true);
 
                 [httpStatus, responsePayload] = this.sendPostRequest(
-                    strTrim(parameters.ApiEndpointUrl),
+                    strLRTrim(parameters.ApiEndpointUrl),
                     accessToken,
                     requestId,
                     requestPayload,
@@ -504,8 +548,12 @@ public class UTCSFCustomerPushService
                 }
                 else
                 {
-                    // Never retry HTTP 400 Bad Request or business validation errors
-                    boolean isPermanentFailure = (httpStatus == 400);
+                    // Never retry non-transient 4xx client/validation errors (retry 408, 429, and 5xx)
+                    boolean isPermanentFailure = (httpStatus >= 400
+                        && httpStatus < 500
+                        && httpStatus != 401
+                        && httpStatus != 408
+                        && httpStatus != 429);
                     UTCSFCustomerPushQueue::markFailed(_queueRecord.RecId, errorMessage, isPermanentFailure, requestId);
                 }
             }
@@ -592,19 +640,27 @@ public class UTCSFCustomerPushService
             throw error('Salesforce Customer Push Endpoint URL is not configured.');
         }
 
-        HttpClient         httpClient     = UTCSFCustomerPushService::getHttpClient(_timeoutSeconds);
-        HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod::Post, _endpointUrl);
+        HttpClient httpClient = this.getHttpClient(_timeoutSeconds);
+        str        responseBody;
+        int        httpStatus;
 
-        requestMessage.Headers.Authorization = new AuthenticationHeaderValue('Bearer', _accessToken);
-        requestMessage.Headers.Add('X-Request-Id', _requestId);
+        using (HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod::Post, _endpointUrl))
+        {
+            requestMessage.Headers.Authorization = new AuthenticationHeaderValue('Bearer', _accessToken);
+            requestMessage.Headers.Add('X-Request-Id', _requestId);
 
-        // Encoding::UTF8 with media type "application/json" sets "Content-Type: application/json; charset=utf-8"
-        StringContent content = new StringContent(_jsonPayload, Encoding::UTF8, 'application/json');
-        requestMessage.Content = content;
+            // Encoding::UTF8 with media type "application/json" sets "Content-Type: application/json; charset=utf-8"
+            using (StringContent content = new StringContent(_jsonPayload, Encoding::UTF8, 'application/json'))
+            {
+                requestMessage.Content = content;
 
-        HttpResponseMessage responseMessage = httpClient.SendAsync(requestMessage).GetAwaiter().GetResult();
-        str                 responseBody    = responseMessage.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-        int                 httpStatus      = System.Convert::ToInt32(responseMessage.StatusCode);
+                using (HttpResponseMessage responseMessage = httpClient.SendAsync(requestMessage).GetAwaiter().GetResult())
+                {
+                    responseBody = responseMessage.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                    httpStatus   = System.Convert::ToInt32(responseMessage.StatusCode);
+                }
+            }
+        }
 
         return [httpStatus, responseBody];
     }
@@ -640,7 +696,7 @@ public class UTCSFCustomerPushService
         str responseBody;
 
         [httpStatus, responseBody] = this.sendGetRequest(
-            strTrim(parameters.ApiEndpointUrl),
+            strLRTrim(parameters.ApiEndpointUrl),
             accessToken,
             requestId,
             parameters.HttpTimeoutSeconds);
@@ -649,7 +705,7 @@ public class UTCSFCustomerPushService
         {
             accessToken = this.getAccessToken(true);
             [httpStatus, responseBody] = this.sendGetRequest(
-                strTrim(parameters.ApiEndpointUrl),
+                strLRTrim(parameters.ApiEndpointUrl),
                 accessToken,
                 requestId,
                 parameters.HttpTimeoutSeconds);
@@ -674,15 +730,21 @@ public class UTCSFCustomerPushService
         str _requestId,
         int _timeoutSeconds = 30)
     {
-        HttpClient         httpClient     = UTCSFCustomerPushService::getHttpClient(_timeoutSeconds);
-        HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod::Get, _endpointUrl);
+        HttpClient httpClient = this.getHttpClient(_timeoutSeconds);
+        str        responseBody;
+        int        httpStatus;
 
-        requestMessage.Headers.Authorization = new AuthenticationHeaderValue('Bearer', _accessToken);
-        requestMessage.Headers.Add('X-Request-Id', _requestId);
+        using (HttpRequestMessage requestMessage = new HttpRequestMessage(HttpMethod::Get, _endpointUrl))
+        {
+            requestMessage.Headers.Authorization = new AuthenticationHeaderValue('Bearer', _accessToken);
+            requestMessage.Headers.Add('X-Request-Id', _requestId);
 
-        HttpResponseMessage responseMessage = httpClient.SendAsync(requestMessage).GetAwaiter().GetResult();
-        str                 responseBody    = responseMessage.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-        int                 httpStatus      = System.Convert::ToInt32(responseMessage.StatusCode);
+            using (HttpResponseMessage responseMessage = httpClient.SendAsync(requestMessage).GetAwaiter().GetResult())
+            {
+                responseBody = responseMessage.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                httpStatus   = System.Convert::ToInt32(responseMessage.StatusCode);
+            }
+        }
 
         return [httpStatus, responseBody];
     }
@@ -786,7 +848,9 @@ public class UTCSFCustomerPushService
         }
         catch
         {
-            // Non-JSON or unexpected structure on 2xx response; treat as succeeded with raw payload logged
+            // Non-JSON response on 2xx (e.g. proxy/gateway HTML page) should not be silently marked as Succeeded
+            isSuccess    = false;
+            errorMessage = strFmt('Unexpected non-JSON 2xx response from Salesforce: %1', subStr(_responsePayload, 1, 500));
         }
 
         return [isSuccess, salesforceAccountId, errorMessage];

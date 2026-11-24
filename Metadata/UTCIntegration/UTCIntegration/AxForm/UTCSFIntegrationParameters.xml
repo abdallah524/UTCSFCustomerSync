@@ -45,7 +45,14 @@ public class UTCSFIntegrationParameters extends FormRun
             int                      httpStatus;
             str                      responseBody;
 
-            [isHealthy, httpStatus, responseBody] = service.checkHealth();
+            try
+            {
+                [isHealthy, httpStatus, responseBody] = service.checkHealth();
+            }
+            finally
+            {
+                service.dispose();
+            }
 
             UTCSFIntegrationParameters_ds.reread();
             UTCSFIntegrationParameters_ds.refresh();
@@ -75,7 +82,10 @@ public class UTCSFIntegrationParameters extends FormRun
         {
             super();
 
-            UTCSFIntegrationParameters::clearCachedToken();
+            changecompany('utc')
+            {
+                UTCSFIntegrationParameters::clearCachedToken();
+            }
             UTCSFIntegrationParameters_ds.reread();
             UTCSFIntegrationParameters_ds.refresh();
 
@@ -98,13 +108,10 @@ public class UTCSFIntegrationParameters extends FormRun
 					<DataField>ApiEndpointUrl</DataField>
 				</AxFormDataSourceField>
 				<AxFormDataSourceField>
-					<DataField>CachedAccessToken</DataField>
+					<DataField>CachedAccessTokenEncrypted</DataField>
 				</AxFormDataSourceField>
 				<AxFormDataSourceField>
 					<DataField>ClientId</DataField>
-				</AxFormDataSourceField>
-				<AxFormDataSourceField>
-					<DataField>ClientSecret</DataField>
 				</AxFormDataSourceField>
 				<AxFormDataSourceField>
 					<DataField>ClientSecretEncrypted</DataField>
@@ -357,11 +364,11 @@ public class UTCSFIntegrationParameters extends FormRun
 											</AxFormControl>
 											<AxFormControl xmlns=""
 												i:type="AxFormStringControl">
-												<Name>CachedAccessToken</Name>
+												<Name>TokenCacheStatus</Name>
 												<AllowEdit>No</AllowEdit>
-												<DataField>CachedAccessToken</DataField>
+												<DataMethod>tokenCacheStatus</DataMethod>
 												<DataSource>UTCSFIntegrationParameters</DataSource>
-												<PasswordStyle>Yes</PasswordStyle>
+												<Label>Token Cache Status</Label>
 												<Type>String</Type>
 												<FormControlExtension
 													i:nil="true" />

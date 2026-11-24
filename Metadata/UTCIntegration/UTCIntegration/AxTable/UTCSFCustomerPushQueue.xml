@@ -78,13 +78,16 @@ public class UTCSFCustomerPushQueue extends common
 				<Name>enqueue</Name>
 				<Source><![CDATA[
     /// <summary>
-    /// Enqueues a customer record for asynchronous push to Salesforce, deduplicating any existing pending queue item.
+    /// Appends a customer record to the staging queue for asynchronous push to Salesforce.
+    /// Uses append-only insert (no <c>forupdate</c> lookup) to avoid SQL lock contention and
+    /// <c>UpdateConflict</c> aborts inside active ERP/POS customer transactions; deduplication
+    /// is performed safely during asynchronous batch processing.
     /// </summary>
     /// <param name = "_custAccount">The customer account in company 'utc'.</param>
     /// <param name = "_sourceChannel">Source channel (e.g., 'POS', 'D365FO', 'E-Comm').</param>
     /// <param name = "_operatingUnitNumber">Store/Operating unit number if applicable.</param>
     /// <param name = "_terminal">Retail POS terminal ID if applicable.</param>
-    /// <returns>The inserted or updated <c>UTCSFCustomerPushQueue</c> record.</returns>
+    /// <returns>The inserted <c>UTCSFCustomerPushQueue</c> record.</returns>
     public static UTCSFCustomerPushQueue enqueue(
         CustAccount           _custAccount,
         UTCSFSourceChannel    _sourceChannel       = 'D365FO',
@@ -100,36 +103,15 @@ public class UTCSFCustomerPushQueue extends common
 
         ttsbegin;
 
-        queueRecord = UTCSFCustomerPushQueue::findPendingByCustAccount(_custAccount, true);
-
-        if (queueRecord.RecId != 0)
-        {
-            if (_sourceChannel && _sourceChannel != 'D365FO')
-            {
-                queueRecord.SourceChannel = _sourceChannel;
-            }
-            if (_operatingUnitNumber)
-            {
-                queueRecord.OperatingUnitNumber = _operatingUnitNumber;
-            }
-            if (_terminal)
-            {
-                queueRecord.Terminal = _terminal;
-            }
-            queueRecord.update();
-        }
-        else
-        {
-            queueRecord.clear();
-            queueRecord.initValue();
-            queueRecord.CustAccount         = _custAccount;
-            queueRecord.SourceChannel       = _sourceChannel ? _sourceChannel : 'D365FO';
-            queueRecord.OperatingUnitNumber = _operatingUnitNumber;
-            queueRecord.Terminal            = _terminal;
-            queueRecord.Status              = UTCSFCustomerPushStatus::Pending;
-            queueRecord.RetryCount          = 0;
-            queueRecord.insert();
-        }
+        queueRecord.clear();
+        queueRecord.initValue();
+        queueRecord.CustAccount         = _custAccount;
+        queueRecord.SourceChannel       = _sourceChannel ? _sourceChannel : 'D365FO';
+        queueRecord.OperatingUnitNumber = _operatingUnitNumber;
+        queueRecord.Terminal            = _terminal;
+        queueRecord.Status              = UTCSFCustomerPushStatus::Pending;
+        queueRecord.RetryCount          = 0;
+        queueRecord.insert();
 
         ttscommit;
 
@@ -167,6 +149,75 @@ public class UTCSFCustomerPushQueue extends common
         ttscommit;
 
         return claimed;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>resetToPending</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Safely resets a claimed <c>Processing</c> record back to <c>Pending</c> (for example when
+    /// the integration is temporarily disabled) so it is never stranded in <c>Processing</c>.
+    /// </summary>
+    /// <param name = "_queueRecId">RecId of the queue item.</param>
+    public static void resetToPending(RecId _queueRecId)
+    {
+        UTCSFCustomerPushQueue queueRecord;
+
+        if (!_queueRecId)
+        {
+            return;
+        }
+
+        ttsbegin;
+
+        select firstonly forupdate queueRecord
+            where queueRecord.RecId  == _queueRecId
+               && queueRecord.Status == UTCSFCustomerPushStatus::Processing;
+
+        if (queueRecord.RecId != 0)
+        {
+            queueRecord.Status = UTCSFCustomerPushStatus::Pending;
+            queueRecord.update();
+        }
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>recoverStaleProcessingRecords</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Recovers queue records stranded in <c>Processing</c> state (e.g. after an AOS recycle or worker crash)
+    /// by resetting any record older than <c>_staleMinutes</c> back to <c>Pending</c>.
+    /// </summary>
+    /// <param name = "_staleMinutes">Age threshold in minutes before a Processing record is considered stale.</param>
+    /// <returns>Number of recovered records.</returns>
+    public static int recoverStaleProcessingRecords(int _staleMinutes = 15)
+    {
+        UTCSFCustomerPushQueue queueRecord;
+        int                    staleThreshold = _staleMinutes > 0 ? _staleMinutes : 15;
+        utcdatetime            cutoffUtc      = DateTimeUtil::addMinutes(DateTimeUtil::utcNow(), -staleThreshold);
+        int                    recoveredCount = 0;
+
+        ttsbegin;
+
+        while select forupdate queueRecord
+            where queueRecord.Status           == UTCSFCustomerPushStatus::Processing
+               && queueRecord.ModifiedDateTime <= cutoffUtc
+        {
+            queueRecord.Status    = UTCSFCustomerPushStatus::Pending;
+            queueRecord.LastError = strFmt('Recovered from stale Processing state after %1 minutes.', staleThreshold);
+            queueRecord.update();
+            recoveredCount++;
+        }
+
+        ttscommit;
+
+        return recoveredCount;
     }
 
 ]]></Source>
@@ -255,7 +306,7 @@ public class UTCSFCustomerPushQueue extends common
 	<TitleField1>CustAccount</TitleField1>
 	<TitleField2>Status</TitleField2>
 	<CacheLookup>NotInTTS</CacheLookup>
-	<ClusteredIndex>CustAccountStatusIdx</ClusteredIndex>
+	<ClusteredIndex>RecId</ClusteredIndex>
 	<CreatedBy>Yes</CreatedBy>
 	<CreatedDateTime>Yes</CreatedDateTime>
 	<ModifiedBy>Yes</ModifiedBy>
@@ -395,7 +446,7 @@ public class UTCSFCustomerPushQueue extends common
 		<AxTableField xmlns=""
 			i:type="AxTableFieldString">
 			<Name>LastError</Name>
-			<ExtendedDataType>FreeTxt</ExtendedDataType>
+			<ExtendedDataType>UTCSFJsonPayload</ExtendedDataType>
 			<HelpText>Most recent error message if the push failed.</HelpText>
 			<Label>Last Error</Label>
 		</AxTableField>
@@ -440,6 +491,18 @@ public class UTCSFCustomerPushQueue extends common
 				</AxTableIndexField>
 				<AxTableIndexField>
 					<DataField>RetryCount</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>CreatedDateTime</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>StatusCreatedIdx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>Status</DataField>
 				</AxTableIndexField>
 				<AxTableIndexField>
 					<DataField>CreatedDateTime</DataField>

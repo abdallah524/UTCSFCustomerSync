@@ -64,8 +64,19 @@ public class UTCSFCustomerPushLog extends FormRun
                 UTCSFCustomerPushQueue queueRecord = UTCSFCustomerPushQueue::enqueue(custTable.AccountNum, 'D365FO');
                 if (UTCSFCustomerPushQueue::markProcessing(queueRecord.RecId))
                 {
-                    UTCSFCustomerPushQueue activeQueue = UTCSFCustomerPushQueue::findByRecId(queueRecord.RecId);
-                    boolean pushed = UTCSFCustomerPushService::construct().pushCustomer(activeQueue);
+                    UTCSFCustomerPushQueue   activeQueue = UTCSFCustomerPushQueue::findByRecId(queueRecord.RecId);
+                    UTCSFCustomerPushService pushService = UTCSFCustomerPushService::construct();
+                    boolean                  pushed;
+
+                    try
+                    {
+                        pushed = pushService.pushCustomer(activeQueue);
+                    }
+                    finally
+                    {
+                        pushService.dispose();
+                    }
+
                     if (pushed)
                     {
                         info(strFmt('Customer %1 successfully pushed to Salesforce.', custTable.AccountNum));

@@ -75,6 +75,11 @@
       <Name>UTCSFSourceChannel</Name>
       <Link>Extended Data Types\UTCSFSourceChannel</Link>
     </Content>
+    <Content Include="AxEdt\UTCSFJsonPayload">
+      <SubType>Content</SubType>
+      <Name>UTCSFJsonPayload</Name>
+      <Link>Extended Data Types\UTCSFJsonPayload</Link>
+    </Content>
     <Content Include="AxTable\UTCSFIntegrationParameters">
       <SubType>Content</SubType>
       <Name>UTCSFIntegrationParameters</Name>
@@ -140,6 +145,11 @@
       <Name>UTCSFLogisticsElectronicAddress_Extension</Name>
       <Link>Classes\UTCSFLogisticsElectronicAddress_Extension</Link>
     </Content>
+    <Content Include="AxClass\UTCSFLogisticsPostalAddress_Extension">
+      <SubType>Content</SubType>
+      <Name>UTCSFLogisticsPostalAddress_Extension</Name>
+      <Link>Classes\UTCSFLogisticsPostalAddress_Extension</Link>
+    </Content>
     <Content Include="AxForm\UTCSFIntegrationParameters">
       <SubType>Content</SubType>
       <Name>UTCSFIntegrationParameters</Name>
@@ -197,5 +207,6 @@
     </Content>
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.Common.targets" />
-  <Import Project="$(BuildTasksDirectory)\Microsoft.Dynamics.Framework.Tools.BuildTasks.targets" />
+  <Import Project="$(BuildTasksDirectory)\Microsoft.Dynamics.Framework.Tools.BuildTasks.17.0.targets" />
 </Project>
+ 

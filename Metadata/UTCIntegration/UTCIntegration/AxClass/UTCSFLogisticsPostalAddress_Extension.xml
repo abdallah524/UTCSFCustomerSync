@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>UTCSFLogisticsPostalAddress_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Chain of Command extension on <c>LogisticsPostalAddress</c> to detect when a customer's
+/// primary postal address city or country/region changes and enqueue the linked <c>CustTable</c>.
+/// </summary>
+[ExtensionOf(tableStr(LogisticsPostalAddress))]
+public final class UTCSFLogisticsPostalAddress_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    public void insert()
+    {
+        boolean hasAddressFields = (this.City != '' || this.CountryRegionId != '');
+
+        next insert();
+
+        if (hasAddressFields && this.Location)
+        {
+            UTCSFCustomerChangeHandler::tryEnqueueByLocationRecId(this.Location);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>update</Name>
+				<Source><![CDATA[
+    public void update()
+    {
+        LogisticsPostalAddress origAddress = this.orig();
+
+        boolean hasAddressChange = (this.City            != origAddress.City
+                                 || this.CountryRegionId != origAddress.CountryRegionId);
+
+        next update();
+
+        if (hasAddressChange && this.Location)
+        {
+            UTCSFCustomerChangeHandler::tryEnqueueByLocationRecId(this.Location);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>delete</Name>
+				<Source><![CDATA[
+    public void delete()
+    {
+        LogisticsLocationRecId locationRecId = this.Location;
+
+        next delete();
+
+        if (locationRecId)
+        {
+            UTCSFCustomerChangeHandler::tryEnqueueByLocationRecId(locationRecId);
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

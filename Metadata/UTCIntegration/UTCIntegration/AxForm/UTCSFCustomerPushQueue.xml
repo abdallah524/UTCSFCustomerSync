@@ -54,15 +54,23 @@ public class UTCSFCustomerPushQueue extends FormRun
 
             changecompany('utc')
             {
-                UTCSFCustomerPushQueue selectedRecord = UTCSFCustomerPushQueue::findByRecId(UTCSFCustomerPushQueue.RecId, true);
-                if (selectedRecord.RecId)
+                if (UTCSFCustomerPushQueue::markProcessing(UTCSFCustomerPushQueue.RecId))
                 {
-                    ttsbegin;
-                    selectedRecord.Status = UTCSFCustomerPushStatus::Processing;
-                    selectedRecord.update();
-                    ttscommit;
+                    UTCSFCustomerPushQueue   selectedRecord = UTCSFCustomerPushQueue::findByRecId(UTCSFCustomerPushQueue.RecId);
+                    UTCSFCustomerPushService pushService    = UTCSFCustomerPushService::construct();
 
-                    UTCSFCustomerPushService::construct().pushCustomer(selectedRecord);
+                    try
+                    {
+                        pushService.pushCustomer(selectedRecord);
+                    }
+                    finally
+                    {
+                        pushService.dispose();
+                    }
+                }
+                else
+                {
+                    warning('Only Pending queue records can be pushed manually.');
                 }
             }
 

@@ -216,7 +216,7 @@ public class UTCSFCustomerPushLog extends common
 			i:type="AxTableFieldString">
 			<Name>RequestPayload</Name>
 			<AllowEdit>No</AllowEdit>
-			<ExtendedDataType>FreeTxt</ExtendedDataType>
+			<ExtendedDataType>UTCSFJsonPayload</ExtendedDataType>
 			<HelpText>JSON request payload sent to Salesforce.</HelpText>
 			<Label>Request Payload (JSON)</Label>
 		</AxTableField>
@@ -224,7 +224,7 @@ public class UTCSFCustomerPushLog extends common
 			i:type="AxTableFieldString">
 			<Name>ResponsePayload</Name>
 			<AllowEdit>No</AllowEdit>
-			<ExtendedDataType>FreeTxt</ExtendedDataType>
+			<ExtendedDataType>UTCSFJsonPayload</ExtendedDataType>
 			<HelpText>JSON response payload returned by Salesforce.</HelpText>
 			<Label>Response Payload (JSON)</Label>
 		</AxTableField>

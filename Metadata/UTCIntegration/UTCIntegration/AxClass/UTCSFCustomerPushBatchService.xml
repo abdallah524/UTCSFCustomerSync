@@ -44,50 +44,78 @@ public class UTCSFCustomerPushBatchService extends SysOperationServiceBase
                 this.resetEligibleFailedRecords();
             }
 
-            UTCSFCustomerPushService pushService    = UTCSFCustomerPushService::construct();
-            UTCSFCustomerPushQueue   queueCandidate;
-            List                     candidateRecIds = new List(Types::Int64);
-            int                      selectedCount   = 0;
+            // Recover any queue items stranded in Processing state after an AOS recycle or crash
+            UTCSFCustomerPushQueue::recoverStaleProcessingRecords(15);
 
-            while select RecId from queueCandidate
-                order by CreatedDateTime asc
-                where queueCandidate.Status == UTCSFCustomerPushStatus::Pending
+            UTCSFCustomerPushService pushService = UTCSFCustomerPushService::construct();
+
+            try
             {
-                candidateRecIds.addEnd(queueCandidate.RecId);
-                selectedCount++;
+                UTCSFCustomerPushQueue queueCandidate;
+                Map                    latestRecIdByCustomer = new Map(Types::String, Types::Int64);
+                List                   supersededRecIds      = new List(Types::Int64);
+                int                    selectedCount         = 0;
 
-                if (selectedCount >= maxRecords)
+                while select RecId, CustAccount from queueCandidate
+                    order by CreatedDateTime asc
+                    where queueCandidate.Status == UTCSFCustomerPushStatus::Pending
                 {
-                    break;
-                }
-            }
-
-            int            succeededCount = 0;
-            int            failedCount    = 0;
-            ListEnumerator enumerator     = candidateRecIds.getEnumerator();
-
-            while (enumerator.moveNext())
-            {
-                RecId queueRecId = enumerator.current();
-
-                if (UTCSFCustomerPushQueue::markProcessing(queueRecId))
-                {
-                    UTCSFCustomerPushQueue activeRecord = UTCSFCustomerPushQueue::findByRecId(queueRecId);
-                    if (pushService.pushCustomer(activeRecord))
+                    if (latestRecIdByCustomer.exists(queueCandidate.CustAccount))
                     {
-                        succeededCount++;
+                        supersededRecIds.addEnd(latestRecIdByCustomer.lookup(queueCandidate.CustAccount));
                     }
-                    else
+
+                    latestRecIdByCustomer.insert(queueCandidate.CustAccount, queueCandidate.RecId);
+                    selectedCount++;
+
+                    if (selectedCount >= maxRecords)
                     {
-                        failedCount++;
+                        break;
                     }
                 }
-            }
 
-            info(strFmt(
-                'UTC Salesforce Customer Push completed. Succeeded: %1, Failed: %2.',
-                succeededCount,
-                failedCount));
+                // Mark superseded pending duplicates as Succeeded (coalesced) so only one push runs per customer
+                ListEnumerator supersededEnum = supersededRecIds.getEnumerator();
+                while (supersededEnum.moveNext())
+                {
+                    RecId supersededRecId = supersededEnum.current();
+                    if (UTCSFCustomerPushQueue::markProcessing(supersededRecId))
+                    {
+                        UTCSFCustomerPushQueue::markSucceeded(supersededRecId, 'COALESCED', '');
+                    }
+                }
+
+                int           succeededCount = 0;
+                int           failedCount    = 0;
+                MapEnumerator enumerator     = latestRecIdByCustomer.getEnumerator();
+
+                while (enumerator.moveNext())
+                {
+                    RecId queueRecId = enumerator.currentValue();
+
+                    if (UTCSFCustomerPushQueue::markProcessing(queueRecId))
+                    {
+                        UTCSFCustomerPushQueue activeRecord = UTCSFCustomerPushQueue::findByRecId(queueRecId);
+                        if (pushService.pushCustomer(activeRecord))
+                        {
+                            succeededCount++;
+                        }
+                        else
+                        {
+                            failedCount++;
+                        }
+                    }
+                }
+
+                info(strFmt(
+                    'UTC Salesforce Customer Push completed. Succeeded: %1, Failed: %2.',
+                    succeededCount,
+                    failedCount));
+            }
+            finally
+            {
+                pushService.dispose();
+            }
         }
     }
 
@@ -153,7 +181,14 @@ public class UTCSFCustomerPushBatchService extends SysOperationServiceBase
                 UTCSFCustomerPushQueue   queueRecord = UTCSFCustomerPushQueue::findByRecId(queueRecId);
                 UTCSFCustomerPushService pushService = UTCSFCustomerPushService::construct();
 
-                isSuccess = pushService.pushCustomer(queueRecord);
+                try
+                {
+                    isSuccess = pushService.pushCustomer(queueRecord);
+                }
+                finally
+                {
+                    pushService.dispose();
+                }
             }
         }
 

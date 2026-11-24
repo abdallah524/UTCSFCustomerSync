@@ -30,9 +30,19 @@ public final class UTCSFCustTable_Extension
 				<Source><![CDATA[
     public void update()
     {
+        CustTable origCustTable = this.orig();
+
+        boolean hasRelevantChange = (this.CustGroup  != origCustTable.CustGroup
+                                  || this.Blocked    != origCustTable.Blocked
+                                  || this.Party      != origCustTable.Party
+                                  || this.AccountNum != origCustTable.AccountNum);
+
         next update();
 
-        UTCSFCustomerChangeHandler::tryEnqueueCustTable(this);
+        if (hasRelevantChange)
+        {
+            UTCSFCustomerChangeHandler::tryEnqueueCustTable(this);
+        }
     }
 
 ]]></Source>

@@ -19,9 +19,10 @@ public final class UTCSFDirPerson_Extension
     public void update()
     {
         DirPerson origPerson    = this.orig();
-        boolean   hasNameChange = (this.Name      != origPerson.Name
-                                || this.NameAlias != origPerson.NameAlias
-                                || this.Gender    != origPerson.Gender);
+        boolean   hasNameChange = (this.Name       != origPerson.Name
+                                || this.NameAlias  != origPerson.NameAlias
+                                || this.Gender     != origPerson.Gender
+                                || this.LanguageId != origPerson.LanguageId);
 
         next update();
 

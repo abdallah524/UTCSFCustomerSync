@@ -70,18 +70,13 @@ public class UTCSFIntegrationParameters extends common
 				<Name>editClientSecret</Name>
 				<Source><![CDATA[
     /// <summary>
-    /// Edit method to encrypt and mask the OAuth2 Client Secret in the UI.
+    /// Edit method to encrypt and mask the OAuth2 Client Secret in the UI without storing plaintext in SQL.
     /// </summary>
     /// <param name = "_set">True when setting a new value from the UI.</param>
     /// <param name = "_value">Plaintext secret entered by the administrator.</param>
     /// <returns>Masked or decrypted secret for UI binding.</returns>
     public edit Password editClientSecret(boolean _set, Password _value)
     {
-        if (_set)
-        {
-            this.ClientSecret = _value;
-        }
-
         return Global::editEncryptedField(this, _value, fieldNum(UTCSFIntegrationParameters, ClientSecretEncrypted), _set);
     }
 
@@ -91,7 +86,7 @@ public class UTCSFIntegrationParameters extends common
 				<Name>getClientSecret</Name>
 				<Source><![CDATA[
     /// <summary>
-    /// Retrieves the decrypted OAuth2 Client Secret stored in the parameters table.
+    /// Retrieves the decrypted OAuth2 Client Secret stored in <c>ClientSecretEncrypted</c>.
     /// </summary>
     /// <returns>Decrypted OAuth2 Client Secret string.</returns>
     public str getClientSecret()
@@ -103,12 +98,51 @@ public class UTCSFIntegrationParameters extends common
             decryptedSecret = Global::editEncryptedField(this, '', fieldNum(UTCSFIntegrationParameters, ClientSecretEncrypted), false);
         }
 
-        if (!decryptedSecret && this.ClientSecret)
+        return strLRTrim(decryptedSecret);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCachedAccessToken</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Retrieves the decrypted cached OAuth2 Bearer access token.
+    /// </summary>
+    /// <returns>Decrypted Bearer token string, or empty string if not cached.</returns>
+    public str getCachedAccessToken()
+    {
+        str decryptedToken;
+
+        if (this.CachedAccessTokenEncrypted != conNull())
         {
-            decryptedSecret = this.ClientSecret;
+            decryptedToken = Global::editEncryptedField(this, '', fieldNum(UTCSFIntegrationParameters, CachedAccessTokenEncrypted), false);
         }
 
-        return strTrim(decryptedSecret);
+        return strLRTrim(decryptedToken);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>tokenCacheStatus</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns a safe, non-sensitive status label for UI display without exposing the raw Bearer token.
+    /// </summary>
+    public display str tokenCacheStatus()
+    {
+        if (this.CachedAccessTokenEncrypted == conNull() || this.TokenExpiresAt == DateTimeUtil::minValue())
+        {
+            return 'Not cached';
+        }
+
+        if (this.TokenExpiresAt <= DateTimeUtil::utcNow())
+        {
+            return 'Expired';
+        }
+
+        return 'Cached (valid)';
     }
 
 ]]></Source>
@@ -117,21 +151,43 @@ public class UTCSFIntegrationParameters extends common
 				<Name>updateCachedToken</Name>
 				<Source><![CDATA[
     /// <summary>
-    /// Persists the newly acquired OAuth2 access token and its UTC expiration timestamp.
-    /// Runs in an isolated transaction so token caching survives even if a downstream API call fails.
+    /// Persists the newly acquired OAuth2 access token (encrypted) and its UTC expiration timestamp.
+    /// Retries on <c>UpdateConflict</c> when multiple workers refresh simultaneously.
     /// </summary>
     /// <param name = "_accessToken">Bearer access token returned by Salesforce OAuth2 endpoint.</param>
     /// <param name = "_expiresAt">UTC expiration timestamp (120 minutes from issuance).</param>
     public static void updateCachedToken(str _accessToken, utcdatetime _expiresAt)
     {
+        #OCCRetryCount
         UTCSFIntegrationParameters parameters;
 
-        ttsbegin;
-        parameters = UTCSFIntegrationParameters::find(true);
-        parameters.CachedAccessToken = _accessToken;
-        parameters.TokenExpiresAt    = _expiresAt;
-        parameters.update();
-        ttscommit;
+        try
+        {
+            ttsbegin;
+            parameters = UTCSFIntegrationParameters::find(true);
+            Global::editEncryptedField(parameters, _accessToken, fieldNum(UTCSFIntegrationParameters, CachedAccessTokenEncrypted), true);
+            parameters.TokenExpiresAt = _expiresAt;
+            parameters.update();
+            ttscommit;
+        }
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw Exception::UpdateConflictNotRecovered;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                throw Exception::UpdateConflict;
+            }
+        }
     }
 
 ]]></Source>
@@ -140,7 +196,7 @@ public class UTCSFIntegrationParameters extends common
 				<Name>clearCachedToken</Name>
 				<Source><![CDATA[
     /// <summary>
-    /// Clears the cached OAuth2 access token and forces the next outbound call to re-authenticate.
+    /// Clears the encrypted cached OAuth2 access token and forces the next outbound call to re-authenticate.
     /// </summary>
     public static void clearCachedToken()
     {
@@ -148,8 +204,8 @@ public class UTCSFIntegrationParameters extends common
 
         ttsbegin;
         parameters = UTCSFIntegrationParameters::find(true);
-        parameters.CachedAccessToken = '';
-        parameters.TokenExpiresAt    = DateTimeUtil::minValue();
+        parameters.CachedAccessTokenEncrypted = conNull();
+        parameters.TokenExpiresAt             = DateTimeUtil::minValue();
         parameters.update();
         ttscommit;
     }
@@ -165,12 +221,12 @@ public class UTCSFIntegrationParameters extends common
 
         if (ret && this.IsEnabled == NoYes::Yes)
         {
-            if (this.TokenUrl && !strStartsWith(strLwr(strTrim(this.TokenUrl)), 'https://'))
+            if (this.TokenUrl && !strStartsWith(strLwr(strLRTrim(this.TokenUrl)), 'https://'))
             {
                 ret = checkFailed('The Salesforce OAuth2 Token URL must use HTTPS.');
             }
 
-            if (this.ApiEndpointUrl && !strStartsWith(strLwr(strTrim(this.ApiEndpointUrl)), 'https://'))
+            if (this.ApiEndpointUrl && !strStartsWith(strLwr(strLRTrim(this.ApiEndpointUrl)), 'https://'))
             {
                 ret = checkFailed('The Salesforce API Endpoint URL must use HTTPS.');
             }
@@ -264,9 +320,6 @@ public class UTCSFIntegrationParameters extends common
 				<AxTableFieldGroupField>
 					<DataField>ClientId</DataField>
 				</AxTableFieldGroupField>
-				<AxTableFieldGroupField>
-					<DataField>ClientSecret</DataField>
-				</AxTableFieldGroupField>
 			</Fields>
 		</AxTableFieldGroup>
 		<AxTableFieldGroup>
@@ -275,9 +328,6 @@ public class UTCSFIntegrationParameters extends common
 			<Fields>
 				<AxTableFieldGroupField>
 					<DataField>TokenExpiresAt</DataField>
-				</AxTableFieldGroupField>
-				<AxTableFieldGroupField>
-					<DataField>CachedAccessToken</DataField>
 				</AxTableFieldGroupField>
 			</Fields>
 		</AxTableFieldGroup>
@@ -321,25 +371,16 @@ public class UTCSFIntegrationParameters extends common
 			<Label>Client ID</Label>
 		</AxTableField>
 		<AxTableField xmlns=""
-			i:type="AxTableFieldString">
-			<Name>ClientSecret</Name>
-			<ExtendedDataType>Password</ExtendedDataType>
-			<HelpText>Connected App OAuth2 Consumer Secret (Client Secret) - masked in UI.</HelpText>
-			<Label>Client Secret</Label>
-			<StringSize>255</StringSize>
-		</AxTableField>
-		<AxTableField xmlns=""
 			i:type="AxTableFieldContainer">
 			<Name>ClientSecretEncrypted</Name>
 			<ExtendedDataType>EncryptedField</ExtendedDataType>
 			<Visible>No</Visible>
 		</AxTableField>
 		<AxTableField xmlns=""
-			i:type="AxTableFieldString">
-			<Name>CachedAccessToken</Name>
-			<ExtendedDataType>FreeTxt</ExtendedDataType>
-			<HelpText>Cached OAuth2 Bearer access token (valid for 120 minutes from issue time).</HelpText>
-			<Label>Cached Access Token</Label>
+			i:type="AxTableFieldContainer">
+			<Name>CachedAccessTokenEncrypted</Name>
+			<ExtendedDataType>EncryptedField</ExtendedDataType>
+			<Visible>No</Visible>
 		</AxTableField>
 		<AxTableField xmlns=""
 			i:type="AxTableFieldUtcDateTime">

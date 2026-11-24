@@ -10,6 +10,9 @@
 /// </summary>
 public class UTCSFPostCommitDispatcher
 {
+    // Cap per-transaction Global::runAsync fan-out so bulk imports (DMF/OData/CDX)
+    // do not exhaust the AOS async thread pool or trigger OAuth2 token stampedes.
+    private const int      MaxImmediateAsyncFanOut = 5;
     private static Set     pendingQueueRecIds;
     private static boolean isSubscribed;
 
@@ -60,10 +63,16 @@ public class UTCSFPostCommitDispatcher
             return;
         }
 
-        Set           itemsToDispatch = pendingQueueRecIds;
-        SetEnumerator enumerator      = itemsToDispatch.getEnumerator();
+        Set itemsToDispatch = pendingQueueRecIds;
+        pendingQueueRecIds  = new Set(Types::Int64);
 
-        pendingQueueRecIds = new Set(Types::Int64);
+        // If a bulk transaction enqueued many records, defer to the scheduled SysOperation batch job
+        if (itemsToDispatch.elements() > MaxImmediateAsyncFanOut)
+        {
+            return;
+        }
+
+        SetEnumerator enumerator = itemsToDispatch.getEnumerator();
 
         while (enumerator.moveNext())
         {
