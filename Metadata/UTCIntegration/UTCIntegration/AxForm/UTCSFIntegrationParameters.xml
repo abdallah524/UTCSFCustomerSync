@@ -161,8 +161,7 @@ public class UTCSFIntegrationParameters extends FormRun
 	<Design>
 		<Caption xmlns="">Salesforce Integration Parameters</Caption>
 		<DataSource xmlns="">UTCSFIntegrationParameters</DataSource>
-		<Pattern xmlns="">TableOfContents</Pattern>
-		<PatternVersion xmlns="">1.1</PatternVersion>
+		<Pattern xmlns="">Custom</Pattern>
 		<SetCompany xmlns="">No</SetCompany>
 		<Style xmlns="">TableOfContents</Style>
 		<Controls xmlns="">
