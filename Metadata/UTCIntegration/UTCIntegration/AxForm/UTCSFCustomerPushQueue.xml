@@ -90,6 +90,9 @@ public class UTCSFCustomerPushQueue extends FormRun
 			<Table>UTCSFCustomerPushQueue</Table>
 			<Fields>
 				<AxFormDataSourceField>
+					<DataField>AllowOutOfScopeGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
 					<DataField>CreatedDateTime</DataField>
 				</AxFormDataSourceField>
 				<AxFormDataSourceField>
@@ -97,6 +100,9 @@ public class UTCSFCustomerPushQueue extends FormRun
 				</AxFormDataSourceField>
 				<AxFormDataSourceField>
 					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsPermanentFailure</DataField>
 				</AxFormDataSourceField>
 				<AxFormDataSourceField>
 					<DataField>LastError</DataField>
@@ -265,6 +271,24 @@ public class UTCSFCustomerPushQueue extends FormRun
 						<FormControlExtension
 							i:nil="true" />
 						<DataField>RetryCount</DataField>
+						<DataSource>UTCSFCustomerPushQueue</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormCheckBoxControl">
+						<Name>AllowOutOfScopeGroup</Name>
+						<Type>CheckBox</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>AllowOutOfScopeGroup</DataField>
+						<DataSource>UTCSFCustomerPushQueue</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormCheckBoxControl">
+						<Name>IsPermanentFailure</Name>
+						<Type>CheckBox</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>IsPermanentFailure</DataField>
 						<DataSource>UTCSFCustomerPushQueue</DataSource>
 					</AxFormControl>
 					<AxFormControl xmlns=""

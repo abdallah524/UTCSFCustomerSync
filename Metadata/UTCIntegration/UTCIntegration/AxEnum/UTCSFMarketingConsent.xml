@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxEnum xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>UTCSFMarketingConsent</Name>
+	<Help>Tri-state marketing consent status synced to Salesforce (NotCaptured sends null, Yes sends opt-in, No sends opt-out).</Help>
+	<Label>Marketing Consent</Label>
+	<UseEnumValue>No</UseEnumValue>
+	<EnumValues>
+		<AxEnumValue>
+			<Name>NotCaptured</Name>
+			<Label>Not captured</Label>
+			<Value>0</Value>
+		</AxEnumValue>
+		<AxEnumValue>
+			<Name>Yes</Name>
+			<Label>Yes</Label>
+			<Value>1</Value>
+		</AxEnumValue>
+		<AxEnumValue>
+			<Name>No</Name>
+			<Label>No</Label>
+			<Value>2</Value>
+		</AxEnumValue>
+	</EnumValues>
+	<IsExtensible>true</IsExtensible>
+</AxEnum>

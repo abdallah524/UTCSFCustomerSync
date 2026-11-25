@@ -61,7 +61,19 @@ public class UTCSFCustomerPushLog extends FormRun
                     return;
                 }
 
-                UTCSFCustomerPushQueue queueRecord = UTCSFCustomerPushQueue::enqueue(custTable.AccountNum, 'D365FO');
+                UTCSFSourceChannel    sourceChannel;
+                OMOperatingUnitNumber operatingUnitNumber;
+                RetailTerminalId      terminal;
+
+                [sourceChannel, operatingUnitNumber, terminal] = UTCSFCustomerChangeHandler::resolveRetailContext(custTable);
+                boolean allowOutOfScope = UTCSFCustomerState::isCustomerSynced(custTable.AccountNum);
+
+                UTCSFCustomerPushQueue queueRecord = UTCSFCustomerPushQueue::enqueue(
+                    custTable.AccountNum,
+                    sourceChannel,
+                    operatingUnitNumber,
+                    terminal,
+                    allowOutOfScope);
                 if (UTCSFCustomerPushQueue::markProcessing(queueRecord.RecId))
                 {
                     UTCSFCustomerPushQueue   activeQueue = UTCSFCustomerPushQueue::findByRecId(queueRecord.RecId);
@@ -119,7 +131,13 @@ public class UTCSFCustomerPushLog extends FormRun
 					<DataField>DurationMs</DataField>
 				</AxFormDataSourceField>
 				<AxFormDataSourceField>
+					<DataField>HasWarnings</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
 					<DataField>HttpStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MatchedOn</DataField>
 				</AxFormDataSourceField>
 				<AxFormDataSourceField>
 					<DataField>PartyNumber</DataField>
@@ -140,13 +158,22 @@ public class UTCSFCustomerPushLog extends FormRun
 					<DataField>ResponsePayload</DataField>
 				</AxFormDataSourceField>
 				<AxFormDataSourceField>
+					<DataField>RowStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
 					<DataField>SalesforceAccountId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesforcePersonContactId</DataField>
 				</AxFormDataSourceField>
 				<AxFormDataSourceField>
 					<DataField>SyncStatus</DataField>
 				</AxFormDataSourceField>
 				<AxFormDataSourceField>
 					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Warnings</DataField>
 				</AxFormDataSourceField>
 			</Fields>
 			<ReferencedDataSources />
@@ -247,6 +274,24 @@ public class UTCSFCustomerPushLog extends FormRun
 								<Items />
 							</AxFormControl>
 							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>Grid_RowStatus</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>RowStatus</DataField>
+								<DataSource>UTCSFCustomerPushLog</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormCheckBoxControl">
+								<Name>Grid_HasWarnings</Name>
+								<Type>CheckBox</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>HasWarnings</DataField>
+								<DataSource>UTCSFCustomerPushLog</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
 								i:type="AxFormIntegerControl">
 								<Name>Grid_HttpStatus</Name>
 								<Type>Integer</Type>
@@ -330,11 +375,47 @@ public class UTCSFCustomerPushLog extends FormRun
 					</AxFormControl>
 					<AxFormControl xmlns=""
 						i:type="AxFormStringControl">
+						<Name>Header_RowStatus</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>RowStatus</DataField>
+						<DataSource>UTCSFCustomerPushLog</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>Header_MatchedOn</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>MatchedOn</DataField>
+						<DataSource>UTCSFCustomerPushLog</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
 						<Name>Header_SalesforceAccountId</Name>
 						<Type>String</Type>
 						<FormControlExtension
 							i:nil="true" />
 						<DataField>SalesforceAccountId</DataField>
+						<DataSource>UTCSFCustomerPushLog</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>Header_SalesforcePersonContactId</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>SalesforcePersonContactId</DataField>
+						<DataSource>UTCSFCustomerPushLog</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormCheckBoxControl">
+						<Name>Header_HasWarnings</Name>
+						<Type>CheckBox</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>HasWarnings</DataField>
 						<DataSource>UTCSFCustomerPushLog</DataSource>
 					</AxFormControl>
 					<AxFormControl xmlns=""
@@ -366,6 +447,28 @@ public class UTCSFCustomerPushLog extends FormRun
 				<FormControlExtension
 					i:nil="true" />
 				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormTabPageControl">
+						<Name>WarningsTabPage</Name>
+						<Type>TabPage</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>WarningsControl</Name>
+								<Type>String</Type>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>Warnings</DataField>
+								<DataSource>UTCSFCustomerPushLog</DataSource>
+								<MultiLine>Yes</MultiLine>
+							</AxFormControl>
+						</Controls>
+						<Caption>Salesforce Warnings (v1.6)</Caption>
+						<ColumnsMode>Fill</ColumnsMode>
+					</AxFormControl>
 					<AxFormControl xmlns=""
 						i:type="AxFormTabPageControl">
 						<Name>RequestPayloadTabPage</Name>

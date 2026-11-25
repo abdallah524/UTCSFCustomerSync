@@ -24,17 +24,17 @@ public static class UTCSFCustTable_Extension
 
         if (custTable)
         {
-            UTCSFCustomerChangeHandler::tryEnqueueCustTable(custTable);
+            UTCSFCustomerChangeHandler::tryEnqueueCustTable(custTable, false);
         }
     }
 
 ]]></Source>
 			</Method>
 			<Method>
-				<Name>CustTable_onUpdating</Name>
+				<Name>CustTable_onUpdated</Name>
 				<Source><![CDATA[
-    [DataEventHandler(tableStr(CustTable), DataEventType::Updating)]
-    public static void CustTable_onUpdating(Common _sender, DataEventArgs _e)
+    [DataEventHandler(tableStr(CustTable), DataEventType::Updated)]
+    public static void CustTable_onUpdated(Common _sender, DataEventArgs _e)
     {
         CustTable custTable = _sender as CustTable;
 
@@ -45,15 +45,29 @@ public static class UTCSFCustTable_Extension
 
         CustTable origCustTable = custTable.orig();
 
-        boolean hasRelevantChange = (custTable.CustGroup  != origCustTable.CustGroup
+        boolean hasGroupChange = (custTable.CustGroup != origCustTable.CustGroup);
+
+        boolean hasRelevantChange = (hasGroupChange
                                   || custTable.Blocked    != origCustTable.Blocked
                                   || custTable.Party      != origCustTable.Party
                                   || custTable.AccountNum != origCustTable.AccountNum);
 
-        if (hasRelevantChange)
+        if (!hasRelevantChange)
         {
-            UTCSFCustomerChangeHandler::tryEnqueueCustTable(custTable);
+            return;
         }
+
+        // Salesforce v1.6: if a customer moves from an in-scope group (e.g. Retail) to an
+        // out-of-scope group (e.g. Coops), D365 must still push the update so Salesforce
+        // excludes the customer from marketing audiences.
+        boolean wasInScopeBeforeUpdate = false;
+        if (hasGroupChange && origCustTable.CustGroup != '')
+        {
+            UTCSFCustomerPushService pushService = UTCSFCustomerPushService::construct();
+            wasInScopeBeforeUpdate = pushService.isInScopeCustomerGroup(origCustTable.CustGroup);
+        }
+
+        UTCSFCustomerChangeHandler::tryEnqueueCustTable(custTable, wasInScopeBeforeUpdate);
     }
 
 ]]></Source>

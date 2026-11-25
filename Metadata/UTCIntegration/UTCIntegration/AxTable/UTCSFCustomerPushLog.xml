@@ -34,24 +34,33 @@ public class UTCSFCustomerPushLog extends common
         UTCSFSalesforceAccountId _salesforceAccountId,
         str                      _requestPayload,
         str                      _responsePayload,
-        int                      _durationMs = 0,
-        RefRecId                 _queueRecId = 0)
+        int                      _durationMs          = 0,
+        RefRecId                 _queueRecId          = 0,
+        UTCSFRowStatus           _rowStatus           = '',
+        UTCSFMatchedOn           _matchedOn           = '',
+        UTCSFSalesforceContactId _salesforceContactId = '',
+        str                      _warnings            = '')
     {
         UTCSFCustomerPushLog logRecord;
 
         ttsbegin;
 
         logRecord.clear();
-        logRecord.CustAccount         = _custAccount;
-        logRecord.PartyNumber         = _partyNumber;
-        logRecord.RequestId           = _requestId;
-        logRecord.HttpStatus          = _httpStatus;
-        logRecord.SyncStatus          = _syncStatus;
-        logRecord.SalesforceAccountId = _salesforceAccountId;
-        logRecord.RequestPayload      = _requestPayload;
-        logRecord.ResponsePayload     = _responsePayload;
-        logRecord.DurationMs          = _durationMs;
-        logRecord.QueueRecId          = _queueRecId;
+        logRecord.CustAccount               = _custAccount;
+        logRecord.PartyNumber               = _partyNumber;
+        logRecord.RequestId                 = _requestId;
+        logRecord.HttpStatus                = _httpStatus;
+        logRecord.SyncStatus                = _syncStatus;
+        logRecord.RowStatus                 = _rowStatus;
+        logRecord.MatchedOn                 = _matchedOn;
+        logRecord.SalesforceAccountId       = _salesforceAccountId;
+        logRecord.SalesforcePersonContactId = _salesforceContactId;
+        logRecord.HasWarnings               = (_warnings != '') ? NoYes::Yes : NoYes::No;
+        logRecord.Warnings                  = _warnings;
+        logRecord.RequestPayload            = _requestPayload;
+        logRecord.ResponsePayload           = _responsePayload;
+        logRecord.DurationMs                = _durationMs;
+        logRecord.QueueRecId                = _queueRecId;
         logRecord.insert();
 
         ttscommit;
@@ -153,7 +162,19 @@ public class UTCSFCustomerPushLog extends common
 					<DataField>SyncStatus</DataField>
 				</AxTableFieldGroupField>
 				<AxTableFieldGroupField>
+					<DataField>RowStatus</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>MatchedOn</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
 					<DataField>SalesforceAccountId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SalesforcePersonContactId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HasWarnings</DataField>
 				</AxTableFieldGroupField>
 				<AxTableFieldGroupField>
 					<DataField>DurationMs</DataField>
@@ -164,6 +185,9 @@ public class UTCSFCustomerPushLog extends common
 			<Name>Payloads</Name>
 			<Label>HTTP Payloads</Label>
 			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>Warnings</DataField>
+				</AxTableFieldGroupField>
 				<AxTableFieldGroupField>
 					<DataField>RequestPayload</DataField>
 				</AxTableFieldGroupField>
@@ -241,6 +265,41 @@ public class UTCSFCustomerPushLog extends common
 			<AllowEdit>No</AllowEdit>
 			<ExtendedDataType>RefRecId</ExtendedDataType>
 			<Label>Queue Record ID</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>RowStatus</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>UTCSFRowStatus</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>MatchedOn</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>UTCSFMatchedOn</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>SalesforcePersonContactId</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>UTCSFSalesforceContactId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>HasWarnings</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>NoYesId</ExtendedDataType>
+			<HelpText>True when Salesforce returned one or more warnings for this customer row.</HelpText>
+			<Label>Has Warnings</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>Warnings</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>UTCSFJsonPayload</ExtendedDataType>
+			<HelpText>Warnings returned by Salesforce for this customer update/create.</HelpText>
+			<Label>Salesforce Warnings</Label>
 		</AxTableField>
 	</Fields>
 	<FullTextIndexes />

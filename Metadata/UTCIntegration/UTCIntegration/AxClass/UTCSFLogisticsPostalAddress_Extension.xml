@@ -14,6 +14,26 @@ public final class UTCSFLogisticsPostalAddress_Extension
 ]]></Declaration>
 		<Methods>
 			<Method>
+				<Name>isPrimaryPartyLocation</Name>
+				<Source><![CDATA[
+    private static boolean isPrimaryPartyLocation(LogisticsLocationRecId _locationRecId)
+    {
+        if (!_locationRecId)
+        {
+            return false;
+        }
+
+        DirPartyLocation dirPartyLocation;
+        select firstonly RecId from dirPartyLocation
+            where dirPartyLocation.Location  == _locationRecId
+               && dirPartyLocation.IsPrimary == NoYes::Yes;
+
+        return dirPartyLocation.RecId != 0;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
 				<Name>insert</Name>
 				<Source><![CDATA[
     public void insert()
@@ -22,7 +42,7 @@ public final class UTCSFLogisticsPostalAddress_Extension
 
         next insert();
 
-        if (hasAddressFields && this.Location)
+        if (hasAddressFields && this.Location && UTCSFLogisticsPostalAddress_Extension::isPrimaryPartyLocation(this.Location))
         {
             UTCSFCustomerChangeHandler::tryEnqueueByLocationRecId(this.Location);
         }
@@ -42,7 +62,7 @@ public final class UTCSFLogisticsPostalAddress_Extension
 
         next update();
 
-        if (hasAddressChange && this.Location)
+        if (hasAddressChange && this.Location && UTCSFLogisticsPostalAddress_Extension::isPrimaryPartyLocation(this.Location))
         {
             UTCSFCustomerChangeHandler::tryEnqueueByLocationRecId(this.Location);
         }
@@ -56,10 +76,11 @@ public final class UTCSFLogisticsPostalAddress_Extension
     public void delete()
     {
         LogisticsLocationRecId locationRecId = this.Location;
+        boolean wasPrimary = UTCSFLogisticsPostalAddress_Extension::isPrimaryPartyLocation(locationRecId);
 
         next delete();
 
-        if (locationRecId)
+        if (wasPrimary && locationRecId)
         {
             UTCSFCustomerChangeHandler::tryEnqueueByLocationRecId(locationRecId);
         }

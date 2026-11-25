@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxEdt xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns=""
+	i:type="AxEdtString">
+	<Name>UTCSFRowStatus</Name>
+	<HelpText>Row-level status returned by Salesforce Customer Push v1.6 (created, updated, unchanged, skipped, matched, merged, error, retry).</HelpText>
+	<Label>Salesforce Row Status</Label>
+	<ArrayElements />
+	<Relations />
+	<TableReferences />
+	<StringSize>30</StringSize>
+</AxEdt>

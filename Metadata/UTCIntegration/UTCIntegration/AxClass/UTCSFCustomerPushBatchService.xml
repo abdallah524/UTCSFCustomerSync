@@ -5,12 +5,13 @@
 		<Declaration><![CDATA[
 /// <summary>
 /// SysOperation and <c>Global::runAsync</c> processor for <c>UTCSFCustomerPushQueue</c>.
-/// Supports both immediate non-blocking real-time pushes via <c>runAsync</c> and scheduled
-/// recurring SysOperation batch sweeps.
+/// Supports both immediate non-blocking real-time pushes via <c>runAsync</c> (with duplicate coalescing)
+/// and scheduled recurring SysOperation batch sweeps (supporting up to 200 customers per API call).
 /// </summary>
 public class UTCSFCustomerPushBatchService extends SysOperationServiceBase
 {
-    private const str TargetCompanyId = 'utc';
+    private const str TargetCompanyId          = 'utc';
+    private const int MaxCustomersPerBatchCall = 200;
 
 }
 ]]></Declaration>
@@ -21,12 +22,16 @@ public class UTCSFCustomerPushBatchService extends SysOperationServiceBase
     /// <summary>
     /// Entry point for the SysOperation batch job to process pending records in <c>UTCSFCustomerPushQueue</c>.
     /// </summary>
-    /// <param name = "_contract">Data contract specifying batch limits.</param>
+    /// <param name = "_contract">Data contract specifying batch limits and API chunk size (1..200).</param>
     public void processQueue(UTCSFCustomerPushBatchContract _contract)
     {
         int maxRecords = (_contract != null && _contract.parmMaxRecordsToProcess() > 0)
             ? _contract.parmMaxRecordsToProcess()
             : 500;
+
+        int batchSize = (_contract != null && _contract.parmBatchSizePerApiCall() > 1)
+            ? min(_contract.parmBatchSizePerApiCall(), MaxCustomersPerBatchCall)
+            : 1;
 
         boolean requeueFailed = (_contract != null) ? _contract.parmIncludeFailedForRetry() : false;
 
@@ -53,13 +58,19 @@ public class UTCSFCustomerPushBatchService extends SysOperationServiceBase
             {
                 UTCSFCustomerPushQueue queueCandidate;
                 Map                    latestRecIdByCustomer = new Map(Types::String, Types::Int64);
+                Set                    outOfScopeCustomers   = new Set(Types::String);
                 List                   supersededRecIds      = new List(Types::Int64);
                 int                    selectedCount         = 0;
 
-                while select RecId, CustAccount from queueCandidate
-                    order by CreatedDateTime asc
+                while select RecId, CustAccount, AllowOutOfScopeGroup from queueCandidate
+                    order by CreatedDateTime asc, RecId asc
                     where queueCandidate.Status == UTCSFCustomerPushStatus::Pending
                 {
+                    if (queueCandidate.AllowOutOfScopeGroup == NoYes::Yes)
+                    {
+                        outOfScopeCustomers.add(queueCandidate.CustAccount);
+                    }
+
                     if (latestRecIdByCustomer.exists(queueCandidate.CustAccount))
                     {
                         supersededRecIds.addEnd(latestRecIdByCustomer.lookup(queueCandidate.CustAccount));
@@ -89,21 +100,74 @@ public class UTCSFCustomerPushBatchService extends SysOperationServiceBase
                 int           failedCount    = 0;
                 MapEnumerator enumerator     = latestRecIdByCustomer.getEnumerator();
 
-                while (enumerator.moveNext())
+                if (batchSize <= 1)
                 {
-                    RecId queueRecId = enumerator.currentValue();
-
-                    if (UTCSFCustomerPushQueue::markProcessing(queueRecId))
+                    while (enumerator.moveNext())
                     {
-                        UTCSFCustomerPushQueue activeRecord = UTCSFCustomerPushQueue::findByRecId(queueRecId);
-                        if (pushService.pushCustomer(activeRecord))
+                        str   custAccount = enumerator.currentKey();
+                        RecId queueRecId  = enumerator.currentValue();
+
+                        if (UTCSFCustomerPushQueue::markProcessing(queueRecId))
                         {
-                            succeededCount++;
+                            UTCSFCustomerPushQueue activeRecord = UTCSFCustomerPushQueue::findByRecId(queueRecId);
+                            if (outOfScopeCustomers.in(custAccount) && activeRecord.AllowOutOfScopeGroup == NoYes::No)
+                            {
+                                activeRecord = this.promoteAllowOutOfScopeFlag(queueRecId);
+                            }
+
+                            if (pushService.pushCustomer(activeRecord))
+                            {
+                                succeededCount++;
+                            }
+                            else
+                            {
+                                failedCount++;
+                            }
                         }
-                        else
+                    }
+                }
+                else
+                {
+                    List currentChunk     = new List(Types::Record);
+                    int  currentChunkSize = 0;
+
+                    while (enumerator.moveNext())
+                    {
+                        str   custAccount = enumerator.currentKey();
+                        RecId queueRecId  = enumerator.currentValue();
+
+                        if (UTCSFCustomerPushQueue::markProcessing(queueRecId))
                         {
-                            failedCount++;
+                            UTCSFCustomerPushQueue activeRecord = UTCSFCustomerPushQueue::findByRecId(queueRecId);
+                            if (outOfScopeCustomers.in(custAccount) && activeRecord.AllowOutOfScopeGroup == NoYes::No)
+                            {
+                                activeRecord = this.promoteAllowOutOfScopeFlag(queueRecId);
+                            }
+
+                            currentChunk.addEnd(activeRecord);
+                            currentChunkSize++;
+
+                            if (currentChunkSize >= batchSize)
+                            {
+                                int chunkSucceeded;
+                                int chunkFailed;
+                                [chunkSucceeded, chunkFailed] = pushService.pushCustomerBatch(currentChunk);
+                                succeededCount += chunkSucceeded;
+                                failedCount    += chunkFailed;
+
+                                currentChunk     = new List(Types::Record);
+                                currentChunkSize = 0;
+                            }
                         }
+                    }
+
+                    if (currentChunkSize > 0)
+                    {
+                        int chunkSucceeded;
+                        int chunkFailed;
+                        [chunkSucceeded, chunkFailed] = pushService.pushCustomerBatch(currentChunk);
+                        succeededCount += chunkSucceeded;
+                        failedCount    += chunkFailed;
                     }
                 }
 
@@ -122,10 +186,32 @@ public class UTCSFCustomerPushBatchService extends SysOperationServiceBase
 ]]></Source>
 			</Method>
 			<Method>
+				<Name>promoteAllowOutOfScopeFlag</Name>
+				<Source><![CDATA[
+    private UTCSFCustomerPushQueue promoteAllowOutOfScopeFlag(RecId _queueRecId)
+    {
+        UTCSFCustomerPushQueue queueRecord;
+
+        ttsbegin;
+        queueRecord = UTCSFCustomerPushQueue::findByRecId(_queueRecId, true);
+        if (queueRecord.RecId != 0 && queueRecord.AllowOutOfScopeGroup == NoYes::No)
+        {
+            queueRecord.AllowOutOfScopeGroup = NoYes::Yes;
+            queueRecord.update();
+        }
+        ttscommit;
+
+        return queueRecord;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
 				<Name>resetEligibleFailedRecords</Name>
 				<Source><![CDATA[
     /// <summary>
-    /// Resets transient Failed queue items back to Pending while excluding non-retryable HTTP 400 errors.
+    /// Resets transient Failed queue items back to Pending while excluding permanent validation errors
+    /// (HTTP 400 or Salesforce v1.6 row <c>status: "error"</c>).
     /// </summary>
     private void resetEligibleFailedRecords()
     {
@@ -134,7 +220,8 @@ public class UTCSFCustomerPushBatchService extends SysOperationServiceBase
         ttsbegin;
 
         while select forupdate queueRecord
-            where queueRecord.Status == UTCSFCustomerPushStatus::Failed
+            where queueRecord.Status             == UTCSFCustomerPushStatus::Failed
+               && queueRecord.IsPermanentFailure == NoYes::No
                && !(queueRecord.LastError like 'HTTP 400*')
         {
             queueRecord.Status     = UTCSFCustomerPushStatus::Pending;
@@ -152,7 +239,7 @@ public class UTCSFCustomerPushBatchService extends SysOperationServiceBase
 				<Source><![CDATA[
     /// <summary>
     /// Static asynchronous worker method invoked via <c>Global::runAsync</c> immediately after a database commit.
-    /// Pushes a single queued customer record to Salesforce on a background thread without blocking POS or UI saves.
+    /// Coalesces rapid multi-datasource saves on the same customer to avoid concurrent Salesforce record locks.
     /// </summary>
     /// <param name = "_params">Container holding <c>[RecId queueRecId]</c>.</param>
     /// <param name = "_cancellationToken">Cancellation token supplied by the async runtime.</param>
@@ -178,7 +265,35 @@ public class UTCSFCustomerPushBatchService extends SysOperationServiceBase
         {
             if (UTCSFCustomerPushQueue::markProcessing(queueRecId))
             {
-                UTCSFCustomerPushQueue   queueRecord = UTCSFCustomerPushQueue::findByRecId(queueRecId);
+                UTCSFCustomerPushQueue queueRecord = UTCSFCustomerPushQueue::findByRecId(queueRecId);
+
+                // If a newer Pending row already exists for the same customer (e.g. rapid form saves across
+                // DirPersonName, LogisticsElectronicAddress, and CustTable), coalesce this older item.
+                UTCSFCustomerPushQueue newerPending;
+                select firstonly RecId from newerPending
+                    index CustAccountStatusIdx
+                    where newerPending.CustAccount == queueRecord.CustAccount
+                       && newerPending.Status      == UTCSFCustomerPushStatus::Pending
+                       && newerPending.RecId       >  queueRecord.RecId;
+
+                if (newerPending.RecId != 0)
+                {
+                    if (queueRecord.AllowOutOfScopeGroup == NoYes::Yes)
+                    {
+                        ttsbegin;
+                        UTCSFCustomerPushQueue newerForUpdate = UTCSFCustomerPushQueue::findByRecId(newerPending.RecId, true);
+                        if (newerForUpdate.RecId != 0 && newerForUpdate.AllowOutOfScopeGroup == NoYes::No)
+                        {
+                            newerForUpdate.AllowOutOfScopeGroup = NoYes::Yes;
+                            newerForUpdate.update();
+                        }
+                        ttscommit;
+                    }
+
+                    UTCSFCustomerPushQueue::markSucceeded(queueRecId, 'COALESCED', '');
+                    return [true];
+                }
+
                 UTCSFCustomerPushService pushService = UTCSFCustomerPushService::construct();
 
                 try

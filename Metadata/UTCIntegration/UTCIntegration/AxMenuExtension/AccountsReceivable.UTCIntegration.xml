@@ -28,6 +28,14 @@
 			</MenuElement>
 		</AxMenuExtensionElement>
 		<AxMenuExtensionElement xmlns="">
+			<Parent>InquiriesAndReports</Parent>
+			<MenuElement xmlns=""
+				i:type="AxMenuElementMenuItem">
+				<Name>UTCSFCustomerState</Name>
+				<MenuItemName>UTCSFCustomerState</MenuItemName>
+			</MenuElement>
+		</AxMenuExtensionElement>
+		<AxMenuExtensionElement xmlns="">
 			<Parent>PeriodicTasks</Parent>
 			<MenuElement xmlns=""
 				i:type="AxMenuElementMenuItem">

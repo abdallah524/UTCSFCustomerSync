@@ -59,7 +59,7 @@ curl -i -sS -X POST "${CUSTOMERS_ENDPOINT}" \
       "PersonMiddleName": "",
       "PersonLastName": "Al-Rateeb",
       "NameAlias": "Abdullah Al-Rateeb",
-      "PersonGender": "Unknown",
+      "PersonGender": "",
       "LanguageId": "en-US",
       "PrimaryContactPhone": "96550800075",
       "PrimaryContactPhoneIsMobile": "No",

@@ -17,7 +17,17 @@ public class UTCSFIntegrationParameters extends FormRun
 				<Source><![CDATA[
     public void init()
     {
-        UTCSFIntegrationParameters::find();
+        changecompany('utc')
+        {
+            UTCSFIntegrationParameters params = UTCSFIntegrationParameters::find(true);
+            if (params.RecId != 0 && strLRTrim(params.InScopeCustomerGroups) == '')
+            {
+                ttsbegin;
+                params.InScopeCustomerGroups = 'Retail,B2C E-Comm,Service,Staff';
+                params.update();
+                ttscommit;
+            }
+        }
 
         super();
     }
@@ -121,6 +131,9 @@ public class UTCSFIntegrationParameters extends FormRun
 				</AxFormDataSourceField>
 				<AxFormDataSourceField>
 					<DataField>HttpTimeoutSeconds</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InScopeCustomerGroups</DataField>
 				</AxFormDataSourceField>
 				<AxFormDataSourceField>
 					<DataField>IsEnabled</DataField>
@@ -287,6 +300,16 @@ public class UTCSFIntegrationParameters extends FormRun
 								<FormControlExtension
 									i:nil="true" />
 								<DataField>HttpTimeoutSeconds</DataField>
+								<DataSource>UTCSFIntegrationParameters</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>InScopeCustomerGroups</Name>
+								<Type>String</Type>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>InScopeCustomerGroups</DataField>
 								<DataSource>UTCSFIntegrationParameters</DataSource>
 							</AxFormControl>
 						</Controls>

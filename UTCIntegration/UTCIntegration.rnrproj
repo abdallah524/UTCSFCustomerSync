@@ -50,6 +50,11 @@
       <Name>UTCSFCustomerPushStatus</Name>
       <Link>Base Enums\UTCSFCustomerPushStatus</Link>
     </Content>
+    <Content Include="AxEnum\UTCSFMarketingConsent">
+      <SubType>Content</SubType>
+      <Name>UTCSFMarketingConsent</Name>
+      <Link>Base Enums\UTCSFMarketingConsent</Link>
+    </Content>
     <Content Include="AxEdt\UTCSFApiUrl">
       <SubType>Content</SubType>
       <Name>UTCSFApiUrl</Name>
@@ -75,6 +80,26 @@
       <Name>UTCSFSalesforceAccountId</Name>
       <Link>Extended Data Types\UTCSFSalesforceAccountId</Link>
     </Content>
+    <Content Include="AxEdt\UTCSFSalesforceContactId">
+      <SubType>Content</SubType>
+      <Name>UTCSFSalesforceContactId</Name>
+      <Link>Extended Data Types\UTCSFSalesforceContactId</Link>
+    </Content>
+    <Content Include="AxEdt\UTCSFRowStatus">
+      <SubType>Content</SubType>
+      <Name>UTCSFRowStatus</Name>
+      <Link>Extended Data Types\UTCSFRowStatus</Link>
+    </Content>
+    <Content Include="AxEdt\UTCSFMatchedOn">
+      <SubType>Content</SubType>
+      <Name>UTCSFMatchedOn</Name>
+      <Link>Extended Data Types\UTCSFMatchedOn</Link>
+    </Content>
+    <Content Include="AxEdt\UTCSFEligibleGroups">
+      <SubType>Content</SubType>
+      <Name>UTCSFEligibleGroups</Name>
+      <Link>Extended Data Types\UTCSFEligibleGroups</Link>
+    </Content>
     <Content Include="AxEdt\UTCSFSourceChannel">
       <SubType>Content</SubType>
       <Name>UTCSFSourceChannel</Name>
@@ -99,6 +124,11 @@
       <SubType>Content</SubType>
       <Name>UTCSFCustomerPushLog</Name>
       <Link>Tables\UTCSFCustomerPushLog</Link>
+    </Content>
+    <Content Include="AxTable\UTCSFCustomerState">
+      <SubType>Content</SubType>
+      <Name>UTCSFCustomerState</Name>
+      <Link>Tables\UTCSFCustomerState</Link>
     </Content>
     <Content Include="AxClass\UTCSFCustomerPushService">
       <SubType>Content</SubType>
@@ -170,6 +200,11 @@
       <Name>UTCSFCustomerPushQueue</Name>
       <Link>Forms\UTCSFCustomerPushQueue</Link>
     </Content>
+    <Content Include="AxForm\UTCSFCustomerState">
+      <SubType>Content</SubType>
+      <Name>UTCSFCustomerState</Name>
+      <Link>Forms\UTCSFCustomerState</Link>
+    </Content>
     <Content Include="AxMenuItemDisplay\UTCSFIntegrationParameters">
       <SubType>Content</SubType>
       <Name>UTCSFIntegrationParameters</Name>
@@ -184,6 +219,11 @@
       <SubType>Content</SubType>
       <Name>UTCSFCustomerPushQueue</Name>
       <Link>Display Menu Items\UTCSFCustomerPushQueue</Link>
+    </Content>
+    <Content Include="AxMenuItemDisplay\UTCSFCustomerState">
+      <SubType>Content</SubType>
+      <Name>UTCSFCustomerState</Name>
+      <Link>Display Menu Items\UTCSFCustomerState</Link>
     </Content>
     <Content Include="AxMenuItemAction\UTCSFCustomerPushBatchController">
       <SubType>Content</SubType>

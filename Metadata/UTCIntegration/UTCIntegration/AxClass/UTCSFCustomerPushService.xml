@@ -11,18 +11,17 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 /// <summary>
-/// Core service responsible for authenticating with Salesforce OAuth2, validating customer eligibility,
-/// constructing the CustomersV3 JSON payload (with full UTF-8/Arabic support), and pushing B2C customer
-/// records to the Salesforce Apex REST endpoint.
+/// Core service responsible for authenticating with Salesforce OAuth2, validating B2C customer eligibility
+/// (including v1.6 out-of-scope group transitions), constructing the CustomersV3 JSON payload (with composite
+/// UTC timestamps, marketing consent, alias accounts, and UTF-8/Arabic support), and pushing single or batched
+/// (up to 200) customer records to the Salesforce Apex REST v1.6 endpoint.
 /// </summary>
 public class UTCSFCustomerPushService
 {
     private const str TargetCompanyId          = 'utc';
     private const str PartyTypePerson          = 'Person';
-    private const str CustGroupRetail          = 'Retail';
-    private const str CustGroupCash            = 'Cash';
-    private const str CustGroupB2CEComm        = 'B2C E-Comm';
-    private const int TokenLifetimeMinutes      = 120;
+    private const int MaxCustomersPerBatchCall = 200;
+    private const int TokenLifetimeMinutes     = 120;
     private const int TokenRefreshBufferMinutes = 5;
 
     private HttpClient httpClientInstance;
@@ -82,9 +81,9 @@ public class UTCSFCustomerPushService
                 httpClientInstance.Dispose();
             }
 
-            httpClientInstance       = new HttpClient();
+            httpClientInstance         = new HttpClient();
             httpClientInstance.Timeout = System.TimeSpan::FromSeconds(timeoutSec);
-            configuredTimeoutSeconds = timeoutSec;
+            configuredTimeoutSeconds   = timeoutSec;
         }
 
         return httpClientInstance;
@@ -117,9 +116,9 @@ public class UTCSFCustomerPushService
             throw error('Salesforce Integration Parameters (TokenUrl, ClientId, ClientSecret) are not configured.');
         }
 
-        utcdatetime nowUtc       = DateTimeUtil::utcNow();
-        utcdatetime safeExpiry   = DateTimeUtil::addMinutes(nowUtc, TokenRefreshBufferMinutes);
-        str         cachedToken  = parameters.getCachedAccessToken();
+        utcdatetime nowUtc      = DateTimeUtil::utcNow();
+        utcdatetime safeExpiry  = DateTimeUtil::addMinutes(nowUtc, TokenRefreshBufferMinutes);
+        str         cachedToken = parameters.getCachedAccessToken();
 
         if (!_forceRefresh
             && cachedToken != ''
@@ -187,47 +186,71 @@ public class UTCSFCustomerPushService
 ]]></Source>
 			</Method>
 			<Method>
-				<Name>isEligibleCustomer</Name>
+				<Name>isInScopeCustomerGroup</Name>
 				<Source><![CDATA[
     /// <summary>
-    /// Evaluates pre-flight filtering rules to determine whether a <c>CustTable</c> record should be pushed to Salesforce.
-    /// Filtering rules:
-    /// 1. <c>dataAreaId</c> must equal "utc"
-    /// 2. <c>PartyType</c> must equal "Person" (skip "Organization")
-    /// 3. <c>CustomerGroupId</c> must be one of: "Retail", "Cash", "B2C E-Comm"
-    /// 4. At least one name field (<c>PersonFirstName</c> or <c>PersonLastName</c>) must be populated.
+    /// Checks whether the supplied <c>CustGroupId</c> belongs to the configured v1.6 in-scope B2C groups
+    /// (default: <c>Retail, B2C E-Comm, Service, Staff</c>).
     /// </summary>
-    /// <param name = "_custTable">The <c>CustTable</c> record to evaluate.</param>
-    /// <returns>True if the customer satisfies all eligibility criteria; otherwise false.</returns>
-    public boolean isEligibleCustomer(CustTable _custTable)
+    public boolean isInScopeCustomerGroup(CustGroupId _custGroup)
+    {
+        str targetGroup = strLwr(strLRTrim(_custGroup));
+        if (targetGroup == '')
+        {
+            return false;
+        }
+
+        UTCSFIntegrationParameters parameters;
+        changecompany(TargetCompanyId)
+        {
+            parameters = UTCSFIntegrationParameters::find();
+        }
+
+        str            groupsCsv  = parameters.effectiveInScopeCustomerGroups();
+        List           groupList  = strSplit(groupsCsv, ',');
+        ListEnumerator enumerator = groupList.getEnumerator();
+
+        while (enumerator.moveNext())
+        {
+            str candidate = strLwr(strLRTrim(enumerator.current()));
+            if (candidate != '' && candidate == targetGroup)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>hasBasePersonEligibility</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Validates base B2C Person requirements independent of Customer Group:
+    /// 1. <c>dataAreaId == "utc"</c>
+    /// 2. <c>PartyType == "Person"</c> (skip <c>Organization</c>)
+    /// 3. At least one of <c>PersonFirstName</c> or <c>PersonLastName</c> is populated.
+    /// </summary>
+    public boolean hasBasePersonEligibility(CustTable _custTable)
     {
         if (!_custTable.RecId || !_custTable.AccountNum || !_custTable.Party)
         {
             return false;
         }
 
-        // Rule 1: dataAreaId must equal "utc"
         if (strLwr(_custTable.DataAreaId) != TargetCompanyId)
         {
             return false;
         }
 
-        // Rule 2: CustomerGroupId must be one of: "Retail", "Cash", "B2C E-Comm"
-        if (_custTable.CustGroup != CustGroupRetail
-            && _custTable.CustGroup != CustGroupCash
-            && _custTable.CustGroup != CustGroupB2CEComm)
-        {
-            return false;
-        }
-
-        // Rule 3: PartyType must equal "Person" (skip "Organization")
         DirPerson dirPerson = DirPerson::find(_custTable.Party);
         if (!dirPerson.RecId)
         {
             return false;
         }
 
-        // Rule 4: At least one name field (PersonFirstName or PersonLastName) must be populated
         DirPersonName dirPersonName = DirPersonName::find(dirPerson.RecId);
         if (strLRTrim(dirPersonName.FirstName) == '' && strLRTrim(dirPersonName.LastName) == '')
         {
@@ -240,15 +263,76 @@ public class UTCSFCustomerPushService
 ]]></Source>
 			</Method>
 			<Method>
+				<Name>isEligibleCustomer</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Evaluates pre-flight filtering rules to determine whether a <c>CustTable</c> record should be pushed to Salesforce.
+    /// Per Salesforce v1.6, a customer is eligible if they satisfy base Person rules AND either:
+    /// - Currently belong to an in-scope B2C group (<c>Retail</c>, <c>B2C E-Comm</c>, <c>Service</c>, <c>Staff</c>), OR
+    /// - Were previously synced to Salesforce and moved to an out-of-scope group (e.g. <c>Coops</c>) so Salesforce
+    ///   can update their group and exclude them from marketing audiences.
+    /// </summary>
+    public boolean isEligibleCustomer(CustTable _custTable, boolean _allowSyncedOutOfScope = true)
+    {
+        if (!this.hasBasePersonEligibility(_custTable))
+        {
+            return false;
+        }
+
+        if (this.isInScopeCustomerGroup(_custTable.CustGroup))
+        {
+            return true;
+        }
+
+        if (_allowSyncedOutOfScope)
+        {
+            boolean alreadySynced = false;
+            changecompany(TargetCompanyId)
+            {
+                alreadySynced = UTCSFCustomerState::isCustomerSynced(_custTable.AccountNum);
+            }
+            if (alreadySynced)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isEligibleQueueItem</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Evaluates whether a queued customer item is eligible for outbound push, honoring the
+    /// <c>AllowOutOfScopeGroup</c> flag captured when a customer transitions from an in-scope group to an out-of-scope group.
+    /// </summary>
+    public boolean isEligibleQueueItem(CustTable _custTable, UTCSFCustomerPushQueue _queueRecord)
+    {
+        if (!this.hasBasePersonEligibility(_custTable))
+        {
+            return false;
+        }
+
+        if (_queueRecord.AllowOutOfScopeGroup == NoYes::Yes)
+        {
+            return true;
+        }
+
+        return this.isEligibleCustomer(_custTable, true);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
 				<Name>buildPayloadJson</Name>
 				<Source><![CDATA[
     /// <summary>
-    /// Queries <c>CustomersV3</c> underlying tables (<c>CustTable</c>, <c>DirPartyTable</c>, <c>DirPerson</c>,
-    /// <c>DirPersonName</c>, <c>LogisticsElectronicAddress</c>, <c>LogisticsPostalAddress</c>) and builds the
-    /// exact Salesforce Customer Push JSON payload.
+    /// Queries <c>CustomersV3</c> underlying tables and <c>UTCSFCustomerState</c> and builds the
+    /// Salesforce v1.6 Customer Push JSON payload for a single queue record.
     /// </summary>
-    /// <param name = "_queueRecord">The staging queue record containing customer account and POS context.</param>
-    /// <returns>Serialized UTF-8 JSON payload string.</returns>
     public str buildPayloadJson(UTCSFCustomerPushQueue _queueRecord)
     {
         JObject rootObject     = new JObject();
@@ -277,15 +361,15 @@ public class UTCSFCustomerPushService
 				<Name>buildBatchPayloadJson</Name>
 				<Source><![CDATA[
     /// <summary>
-    /// Builds a batched JSON payload for up to 200 queue records (used for backfill scenarios).
+    /// Builds a batched JSON payload for up to 200 eligible queue records (mixing creates and updates).
     /// </summary>
-    /// <param name = "_queueRecords">List of <c>UTCSFCustomerPushQueue</c> records.</param>
+    /// <param name = "_eligibleQueueRecords">List of validated <c>UTCSFCustomerPushQueue</c> records (max 200).</param>
     /// <returns>Serialized UTF-8 JSON payload string containing the customers array.</returns>
-    public str buildBatchPayloadJson(List _queueRecords)
+    public str buildBatchPayloadJson(List _eligibleQueueRecords)
     {
         JObject        rootObject     = new JObject();
         JArray         customersArray = new JArray();
-        ListEnumerator enumerator     = _queueRecords.getEnumerator();
+        ListEnumerator enumerator     = _eligibleQueueRecords.getEnumerator();
 
         changecompany(TargetCompanyId)
         {
@@ -294,7 +378,7 @@ public class UTCSFCustomerPushService
                 UTCSFCustomerPushQueue queueRecord = enumerator.current();
                 CustTable              custTable   = CustTable::find(queueRecord.CustAccount);
 
-                if (custTable.RecId && this.isEligibleCustomer(custTable))
+                if (custTable.RecId && this.isEligibleQueueItem(custTable, queueRecord))
                 {
                     customersArray.Add(this.buildCustomerJObject(custTable, queueRecord));
                 }
@@ -312,12 +396,10 @@ public class UTCSFCustomerPushService
 				<Name>buildCustomerJObject</Name>
 				<Source><![CDATA[
     /// <summary>
-    /// Constructs a single customer <c>JObject</c> conforming 1-to-1 to the <c>CustomersV3</c> schema
-    /// plus the 6 POS and marketing consent attributes.
+    /// Constructs a single customer <c>JObject</c> conforming to the Salesforce v1.6 Customer Push schema:
+    /// full current record, composite <c>ModifiedDateTimeCustTable</c>, marketing consent fields + timestamp,
+    /// and sibling <c>AliasCustomerAccounts</c> on the same Party.
     /// </summary>
-    /// <param name = "_custTable">The <c>CustTable</c> record in company 'utc'.</param>
-    /// <param name = "_queueRecord">The <c>UTCSFCustomerPushQueue</c> record carrying channel metadata.</param>
-    /// <returns>Populated <c>JObject</c> for one customer.</returns>
     protected JObject buildCustomerJObject(CustTable _custTable, UTCSFCustomerPushQueue _queueRecord)
     {
         DirPartyTable              dirPartyTable  = DirPartyTable::findRec(_custTable.Party);
@@ -326,8 +408,10 @@ public class UTCSFCustomerPushService
         LogisticsElectronicAddress primaryPhone   = this.findPrimaryElectronicAddress(dirPartyTable, LogisticsElectronicAddressMethodType::Phone);
         LogisticsElectronicAddress primaryEmail   = this.findPrimaryElectronicAddress(dirPartyTable, LogisticsElectronicAddressMethodType::Email);
         LogisticsPostalAddress     primaryAddress = DirParty::primaryPostalAddress(_custTable.Party);
+        UTCSFCustomerState         customerState  = UTCSFCustomerState::find(_custTable.AccountNum);
 
-        str genderStr = 'Unknown';
+        // Leave blank when gender is unknown so Salesforce keeps Gender empty until populated (v1.6 Page 6)
+        str genderStr = '';
         switch (dirPerson.Gender)
         {
             case Gender::Male:
@@ -340,7 +424,7 @@ public class UTCSFCustomerPushService
                 genderStr = 'NonSpecific';
                 break;
             default:
-                genderStr = 'Unknown';
+                genderStr = '';
                 break;
         }
 
@@ -376,6 +460,37 @@ public class UTCSFCustomerPushService
         str operatingUnitNumber = _queueRecord.OperatingUnitNumber ? _queueRecord.OperatingUnitNumber : '';
         str terminal            = _queueRecord.Terminal ? _queueRecord.Terminal : '';
 
+        utcdatetime effectiveModifiedDateTime = this.resolveEffectiveModifiedDateTime(
+            _custTable,
+            dirPersonName,
+            primaryAddress,
+            customerState,
+            _queueRecord);
+
+        // Marketing consent fields (Salesforce v1.6 Area #4)
+        boolean hasAnyConsent = (customerState.RecId != 0)
+            && (customerState.ConsentSms      != UTCSFMarketingConsent::NotCaptured
+             || customerState.ConsentWhatsApp != UTCSFMarketingConsent::NotCaptured
+             || customerState.ConsentEmail    != UTCSFMarketingConsent::NotCaptured);
+
+        JValue consentCapturedToken = (hasAnyConsent && customerState.ConsentCapturedDateTime != DateTimeUtil::minValue())
+            ? new JValue(this.formatIso8601Utc(customerState.ConsentCapturedDateTime))
+            : JValue::CreateNull();
+
+        // Populate sibling D365 accounts sharing the same Party in 'utc' (Salesforce v1.6 Example F)
+        JArray aliasAccountsArray = new JArray();
+        if (_custTable.Party)
+        {
+            CustTable aliasCustTable;
+            while select AccountNum from aliasCustTable
+                order by CreatedDateTime asc, RecId asc
+                where aliasCustTable.Party      == _custTable.Party
+                   && aliasCustTable.AccountNum != _custTable.AccountNum
+            {
+                aliasAccountsArray.Add(new JValue(aliasCustTable.AccountNum));
+            }
+        }
+
         JObject customerObj = new JObject();
 
         customerObj.Add('dataAreaId',                  new JValue(TargetCompanyId));
@@ -396,17 +511,92 @@ public class UTCSFCustomerPushService
         customerObj.Add('AddressCountryRegionId',      new JValue(primaryAddress.CountryRegionId ? primaryAddress.CountryRegionId : ''));
         customerObj.Add('OnHoldStatus',                new JValue(onHoldStatusStr));
         customerObj.Add('CreatedDateTimeCustTable',    new JValue(this.formatIso8601Utc(_custTable.CreatedDateTime)));
-        customerObj.Add('ModifiedDateTimeCustTable',   new JValue(this.formatIso8601Utc(_custTable.ModifiedDateTime)));
+        customerObj.Add('ModifiedDateTimeCustTable',   new JValue(this.formatIso8601Utc(effectiveModifiedDateTime)));
         customerObj.Add('SourceChannel',               new JValue(sourceChannel));
         customerObj.Add('OperatingUnitNumber',         new JValue(operatingUnitNumber));
         customerObj.Add('Terminal',                    new JValue(terminal));
-        customerObj.Add('MarketingConsentSms',         JValue::CreateNull());
-        customerObj.Add('MarketingConsentWhatsApp',    JValue::CreateNull());
-        customerObj.Add('MarketingConsentEmail',       JValue::CreateNull());
-        customerObj.Add('ConsentCapturedDateTime',     JValue::CreateNull());
-        customerObj.Add('AliasCustomerAccounts',       new JArray());
+        customerObj.Add('MarketingConsentSms',         this.consentEnumToJValue(customerState.ConsentSms));
+        customerObj.Add('MarketingConsentWhatsApp',    this.consentEnumToJValue(customerState.ConsentWhatsApp));
+        customerObj.Add('MarketingConsentEmail',       this.consentEnumToJValue(customerState.ConsentEmail));
+        customerObj.Add('ConsentCapturedDateTime',     consentCapturedToken);
+        customerObj.Add('AliasCustomerAccounts',       aliasAccountsArray);
 
         return customerObj;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>consentEnumToJValue</Name>
+				<Source><![CDATA[
+    private JValue consentEnumToJValue(UTCSFMarketingConsent _consent)
+    {
+        switch (_consent)
+        {
+            case UTCSFMarketingConsent::Yes:
+                return new JValue('Yes');
+            case UTCSFMarketingConsent::No:
+                return new JValue('No');
+            default:
+                return JValue::CreateNull();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>resolveEffectiveModifiedDateTime</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Computes the latest UTC modification timestamp across <c>CustTable</c>, Global Address Book
+    /// ValidTimeState tables (<c>DirPersonName</c>, <c>LogisticsPostalAddress</c>), <c>UTCSFCustomerState</c>
+    /// consent timestamps, and the change queue event timestamp so GAB/consent updates always carry a newer
+    /// <c>ModifiedDateTimeCustTable</c> in Salesforce v1.6.
+    /// </summary>
+    private utcdatetime resolveEffectiveModifiedDateTime(
+        CustTable              _custTable,
+        DirPersonName          _dirPersonName,
+        LogisticsPostalAddress _primaryAddress,
+        UTCSFCustomerState     _customerState,
+        UTCSFCustomerPushQueue _queueRecord)
+    {
+        utcdatetime nowUtc  = DateTimeUtil::utcNow();
+        utcdatetime bestUtc = _custTable.ModifiedDateTime;
+
+        if (_custTable.CreatedDateTime > bestUtc)
+        {
+            bestUtc = _custTable.CreatedDateTime;
+        }
+
+        if (_dirPersonName.RecId && _dirPersonName.ValidFrom <= nowUtc && _dirPersonName.ValidFrom > bestUtc)
+        {
+            bestUtc = _dirPersonName.ValidFrom;
+        }
+
+        if (_primaryAddress.RecId && _primaryAddress.ValidFrom <= nowUtc && _primaryAddress.ValidFrom > bestUtc)
+        {
+            bestUtc = _primaryAddress.ValidFrom;
+        }
+
+        if (_customerState.RecId)
+        {
+            if (_customerState.ConsentCapturedDateTime <= nowUtc && _customerState.ConsentCapturedDateTime > bestUtc)
+            {
+                bestUtc = _customerState.ConsentCapturedDateTime;
+            }
+        }
+
+        if (_queueRecord.CreatedDateTime > bestUtc)
+        {
+            bestUtc = _queueRecord.CreatedDateTime;
+        }
+
+        if (bestUtc == DateTimeUtil::minValue())
+        {
+            bestUtc = nowUtc;
+        }
+
+        return bestUtc;
     }
 
 ]]></Source>
@@ -458,8 +648,9 @@ public class UTCSFCustomerPushService
     private str formatIso8601Utc(utcdatetime _dateTime)
     {
         utcdatetime effectiveDateTime = (_dateTime == DateTimeUtil::minValue()) ? DateTimeUtil::utcNow() : _dateTime;
+        str formatted = DateTimeUtil::toStr(effectiveDateTime);
 
-        return DateTimeUtil::toStr(effectiveDateTime) + 'Z';
+        return strEndsWith(formatted, 'Z') ? formatted : (formatted + 'Z');
     }
 
 ]]></Source>
@@ -468,12 +659,11 @@ public class UTCSFCustomerPushService
 				<Name>pushCustomer</Name>
 				<Source><![CDATA[
     /// <summary>
-    /// Sends the outbound HTTP POST request to Salesforce for the specified queue item,
-    /// handles HTTP 401 token refresh &amp; single retry, writes to <c>UTCSFCustomerPushLog</c>,
-    /// and updates <c>UTCSFCustomerPushQueue</c> (never retrying HTTP 400).
+    /// Sends the outbound HTTP POST request to Salesforce for a single queue item, handles HTTP 401 token refresh,
+    /// parses Salesforce v1.6 row statuses (<c>created</c>, <c>updated</c>, <c>unchanged</c>, <c>skipped</c>,
+    /// <c>matched</c>, <c>merged</c>, <c>retry</c>, <c>error</c>) and <c>warnings</c>, updates
+    /// <c>UTCSFCustomerState</c>, <c>UTCSFCustomerPushLog</c>, and <c>UTCSFCustomerPushQueue</c>.
     /// </summary>
-    /// <param name = "_queueRecord">The <c>UTCSFCustomerPushQueue</c> record to process.</param>
-    /// <returns>True if the customer was successfully pushed to Salesforce; otherwise false.</returns>
     public boolean pushCustomer(UTCSFCustomerPushQueue _queueRecord)
     {
         if (!_queueRecord.RecId || !_queueRecord.CustAccount)
@@ -481,50 +671,122 @@ public class UTCSFCustomerPushService
             return false;
         }
 
-        UTCSFIntegrationParameters parameters;
-        CustTable                  custTable;
-        DirPartyTable              dirPartyTable;
+        List singleItemList = new List(Types::Record);
+        singleItemList.addEnd(_queueRecord);
 
+        int succeededCount;
+        int failedCount;
+
+        [succeededCount, failedCount] = this.pushCustomerBatch(singleItemList);
+
+        return succeededCount > 0 && failedCount == 0;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pushCustomerBatch</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Pushes 1 to 200 claimed <c>UTCSFCustomerPushQueue</c> records in a single HTTP POST call,
+    /// correlating each row in <c>results[]</c> back to its originating queue record via <c>index</c>.
+    /// </summary>
+    /// <param name = "_queueRecords">List of claimed <c>UTCSFCustomerPushQueue</c> records (up to 200).</param>
+    /// <returns>Container of <c>[int succeededCount, int failedCount]</c>.</returns>
+    public container pushCustomerBatch(List _queueRecords)
+    {
+        if (_queueRecords == null || _queueRecords.empty())
+        {
+            return [0, 0];
+        }
+
+        UTCSFIntegrationParameters parameters;
         changecompany(TargetCompanyId)
         {
-            parameters    = UTCSFIntegrationParameters::find();
-            custTable     = CustTable::find(_queueRecord.CustAccount);
-            dirPartyTable = DirPartyTable::findRec(custTable.Party);
+            parameters = UTCSFIntegrationParameters::find();
         }
 
         if (parameters.IsEnabled == NoYes::No)
         {
             changecompany(TargetCompanyId)
             {
-                UTCSFCustomerPushQueue::resetToPending(_queueRecord.RecId);
+                ListEnumerator disabledEnum = _queueRecords.getEnumerator();
+                while (disabledEnum.moveNext())
+                {
+                    UTCSFCustomerPushQueue disabledItem = disabledEnum.current();
+                    UTCSFCustomerPushQueue::resetToPending(disabledItem.RecId);
+                }
             }
-            return false;
+            return [0, 0];
         }
 
-        // Pre-flight eligibility check
-        if (!this.isEligibleCustomer(custTable))
+        Array eligibleQueueArray = new Array(Types::Record);
+        Array eligibleCustArray  = new Array(Types::Record);
+        Array eligiblePartyArray = new Array(Types::String);
+        JArray customersJsonArray = new JArray();
+
+        int eligibleCount = 0;
+        int failedCount   = 0;
+        int succeededCount = 0;
+
+        changecompany(TargetCompanyId)
         {
-            changecompany(TargetCompanyId)
+            ListEnumerator candidateEnum = _queueRecords.getEnumerator();
+            while (candidateEnum.moveNext())
             {
-                UTCSFCustomerPushQueue::markFailed(
-                    _queueRecord.RecId,
-                    strFmt('Customer %1 did not pass B2C eligibility filtering rules.', _queueRecord.CustAccount),
-                    true);
+                UTCSFCustomerPushQueue queueItem = candidateEnum.current();
+                if (!queueItem.RecId || !queueItem.CustAccount)
+                {
+                    continue;
+                }
+
+                if (eligibleCount >= MaxCustomersPerBatchCall)
+                {
+                    // Return any overflow beyond 200 back to Pending for the next chunk
+                    UTCSFCustomerPushQueue::resetToPending(queueItem.RecId);
+                    continue;
+                }
+
+                CustTable custTable = CustTable::find(queueItem.CustAccount);
+                if (!this.isEligibleQueueItem(custTable, queueItem))
+                {
+                    UTCSFCustomerPushQueue::markFailed(
+                        queueItem.RecId,
+                        strFmt('Customer %1 did not pass B2C eligibility filtering rules.', queueItem.CustAccount),
+                        true);
+                    failedCount++;
+                    continue;
+                }
+
+                DirPartyTable dirPartyTable = DirPartyTable::findRec(custTable.Party);
+
+                eligibleCount++;
+                eligibleQueueArray.value(eligibleCount, queueItem);
+                eligibleCustArray.value(eligibleCount, custTable);
+                eligiblePartyArray.value(eligibleCount, dirPartyTable.PartyNumber);
+
+                customersJsonArray.Add(this.buildCustomerJObject(custTable, queueItem));
             }
-            return false;
         }
 
-        str            requestId       = strLwr(guid2StrWithoutBraces(newGuid()));
-        str            requestPayload  = '';
-        str            responsePayload = '';
-        int            httpStatus      = 0;
-        int            durationMs      = 0;
+        if (eligibleCount == 0)
+        {
+            return [0, failedCount];
+        }
+
+        JObject rootObject = new JObject();
+        rootObject.Add('customers', customersJsonArray);
+
+        str requestId       = strLwr(guid2StrWithoutBraces(newGuid()));
+        str requestPayload  = rootObject.ToString(Formatting::None);
+        str responsePayload = '';
+        int httpStatus      = 0;
+        int durationMs      = 0;
+
         System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch::StartNew();
 
         try
         {
-            requestPayload = this.buildPayloadJson(_queueRecord);
-
             str accessToken = this.getAccessToken(false);
 
             [httpStatus, responsePayload] = this.sendPostRequest(
@@ -550,54 +812,131 @@ public class UTCSFCustomerPushService
             stopwatch.Stop();
             durationMs = System.Convert::ToInt32(stopwatch.ElapsedMilliseconds);
 
-            boolean isSuccess           = (httpStatus >= 200 && httpStatus < 300);
-            str     salesforceAccountId = '';
-            str     errorMessage        = '';
-
-            if (isSuccess)
+            if (httpStatus < 200 || httpStatus >= 300)
             {
-                [isSuccess, salesforceAccountId, errorMessage] = this.parseCustomerPushResponse(responsePayload);
-            }
-            else
-            {
-                errorMessage = strFmt('HTTP %1: %2', httpStatus, responsePayload);
+                // Whole-call HTTP failure (e.g. 400 invalid JSON/limit, 401 auth failure, 500 server error)
+                boolean isCallPermanentFailure = (httpStatus >= 400
+                    && httpStatus < 500
+                    && httpStatus != 401
+                    && httpStatus != 408
+                    && httpStatus != 429);
+
+                str httpErrorMsg = strFmt('HTTP %1: %2', httpStatus, responsePayload);
+
+                changecompany(TargetCompanyId)
+                {
+                    for (int idx = 1; idx <= eligibleCount; idx++)
+                    {
+                        UTCSFCustomerPushQueue qItem     = eligibleQueueArray.value(idx);
+                        str                    partyNum  = eligiblePartyArray.value(idx);
+
+                        UTCSFCustomerPushLog::writeLog(
+                            qItem.CustAccount,
+                            partyNum,
+                            requestId,
+                            httpStatus,
+                            UTCSFCustomerPushStatus::Failed,
+                            '',
+                            requestPayload,
+                            responsePayload,
+                            durationMs,
+                            qItem.RecId);
+
+                        UTCSFCustomerPushQueue::markFailed(qItem.RecId, httpErrorMsg, isCallPermanentFailure, requestId);
+                        failedCount++;
+                    }
+                }
+
+                return [0, failedCount];
             }
 
-            UTCSFCustomerPushStatus syncStatus = isSuccess
-                ? UTCSFCustomerPushStatus::Succeeded
-                : UTCSFCustomerPushStatus::Failed;
+            // Parse HTTP 2xx JSON response and correlate results[i] by index (0-based -> 1-based Array)
+            Map rowResultsByOneBasedIdx = this.parseBatchResultsMap(responsePayload, eligibleCount);
 
             changecompany(TargetCompanyId)
             {
-                UTCSFCustomerPushLog::writeLog(
-                    _queueRecord.CustAccount,
-                    dirPartyTable.PartyNumber,
-                    requestId,
-                    httpStatus,
-                    syncStatus,
-                    salesforceAccountId,
-                    requestPayload,
-                    responsePayload,
-                    durationMs,
-                    _queueRecord.RecId);
+                for (int idx = 1; idx <= eligibleCount; idx++)
+                {
+                    UTCSFCustomerPushQueue qItem     = eligibleQueueArray.value(idx);
+                    CustTable              cTable    = eligibleCustArray.value(idx);
+                    str                    partyNum  = eligiblePartyArray.value(idx);
 
-                if (isSuccess)
-                {
-                    UTCSFCustomerPushQueue::markSucceeded(_queueRecord.RecId, requestId, salesforceAccountId);
-                }
-                else
-                {
-                    // Never retry non-transient 4xx client/validation errors (retry 408, 429, and 5xx)
-                    boolean isPermanentFailure = (httpStatus >= 400
-                        && httpStatus < 500
-                        && httpStatus != 401
-                        && httpStatus != 408
-                        && httpStatus != 429);
-                    UTCSFCustomerPushQueue::markFailed(_queueRecord.RecId, errorMessage, isPermanentFailure, requestId);
+                    boolean rowSuccess          = false;
+                    boolean rowPermanentFailure = false;
+                    str     rowStatus           = '';
+                    str     matchedOn           = '';
+                    str     sfAccountId         = '';
+                    str     sfContactId         = '';
+                    str     warningsText        = '';
+                    str     errorsText          = '';
+
+                    if (rowResultsByOneBasedIdx.exists(idx))
+                    {
+                        [rowSuccess, rowPermanentFailure, rowStatus, matchedOn, sfAccountId, sfContactId, warningsText, errorsText] =
+                            rowResultsByOneBasedIdx.lookup(idx);
+                    }
+                    else
+                    {
+                        rowSuccess          = false;
+                        rowPermanentFailure = false;
+                        errorsText          = strFmt('Missing result entry for row index %1 in Salesforce 2xx response.', idx - 1);
+                    }
+
+                    UTCSFCustomerPushStatus logSyncStatus;
+                    if (rowSuccess)
+                    {
+                        logSyncStatus = (warningsText != '')
+                            ? UTCSFCustomerPushStatus::SucceededWithWarnings
+                            : UTCSFCustomerPushStatus::Succeeded;
+                    }
+                    else
+                    {
+                        logSyncStatus = UTCSFCustomerPushStatus::Failed;
+                    }
+
+                    UTCSFCustomerPushLog::writeLog(
+                        qItem.CustAccount,
+                        partyNum,
+                        requestId,
+                        httpStatus,
+                        logSyncStatus,
+                        sfAccountId,
+                        requestPayload,
+                        responsePayload,
+                        durationMs,
+                        qItem.RecId,
+                        rowStatus,
+                        matchedOn,
+                        sfContactId,
+                        warningsText);
+
+                    if (rowSuccess)
+                    {
+                        UTCSFCustomerPushQueue::markSucceeded(qItem.RecId, requestId, sfAccountId);
+
+                        // Persist synced customer state unless a new out-of-scope customer was intentionally skipped
+                        if (rowStatus != 'skipped' || sfAccountId != '')
+                        {
+                            UTCSFCustomerState::upsertSyncResult(
+                                qItem.CustAccount,
+                                partyNum,
+                                cTable.CustGroup,
+                                sfAccountId,
+                                sfContactId,
+                                rowStatus);
+                        }
+
+                        succeededCount++;
+                    }
+                    else
+                    {
+                        UTCSFCustomerPushQueue::markFailed(qItem.RecId, errorsText, rowPermanentFailure, requestId);
+                        failedCount++;
+                    }
                 }
             }
 
-            return isSuccess;
+            return [succeededCount, failedCount];
         }
         catch (Exception::CLRError)
         {
@@ -609,23 +948,29 @@ public class UTCSFCustomerPushService
 
             changecompany(TargetCompanyId)
             {
-                UTCSFCustomerPushLog::writeLog(
-                    _queueRecord.CustAccount,
-                    dirPartyTable.PartyNumber,
-                    requestId,
-                    httpStatus,
-                    UTCSFCustomerPushStatus::Failed,
-                    '',
-                    requestPayload,
-                    exceptionMessage,
-                    durationMs,
-                    _queueRecord.RecId);
+                for (int idx = 1; idx <= eligibleCount; idx++)
+                {
+                    UTCSFCustomerPushQueue qItem    = eligibleQueueArray.value(idx);
+                    str                    partyNum = eligiblePartyArray.value(idx);
 
-                boolean isPermanentFailure = (httpStatus == 400);
-                UTCSFCustomerPushQueue::markFailed(_queueRecord.RecId, exceptionMessage, isPermanentFailure, requestId);
+                    UTCSFCustomerPushLog::writeLog(
+                        qItem.CustAccount,
+                        partyNum,
+                        requestId,
+                        httpStatus,
+                        UTCSFCustomerPushStatus::Failed,
+                        '',
+                        requestPayload,
+                        exceptionMessage,
+                        durationMs,
+                        qItem.RecId);
+
+                    UTCSFCustomerPushQueue::markFailed(qItem.RecId, exceptionMessage, (httpStatus == 400), requestId);
+                    failedCount++;
+                }
             }
 
-            return false;
+            return [0, failedCount];
         }
         catch
         {
@@ -636,23 +981,29 @@ public class UTCSFCustomerPushService
 
             changecompany(TargetCompanyId)
             {
-                UTCSFCustomerPushLog::writeLog(
-                    _queueRecord.CustAccount,
-                    dirPartyTable.PartyNumber,
-                    requestId,
-                    httpStatus,
-                    UTCSFCustomerPushStatus::Failed,
-                    '',
-                    requestPayload,
-                    infologError,
-                    durationMs,
-                    _queueRecord.RecId);
+                for (int idx = 1; idx <= eligibleCount; idx++)
+                {
+                    UTCSFCustomerPushQueue qItem    = eligibleQueueArray.value(idx);
+                    str                    partyNum = eligiblePartyArray.value(idx);
 
-                boolean isPermanentFailure = (httpStatus == 400);
-                UTCSFCustomerPushQueue::markFailed(_queueRecord.RecId, infologError, isPermanentFailure, requestId);
+                    UTCSFCustomerPushLog::writeLog(
+                        qItem.CustAccount,
+                        partyNum,
+                        requestId,
+                        httpStatus,
+                        UTCSFCustomerPushStatus::Failed,
+                        '',
+                        requestPayload,
+                        infologError,
+                        durationMs,
+                        qItem.RecId);
+
+                    UTCSFCustomerPushQueue::markFailed(qItem.RecId, infologError, (httpStatus == 400), requestId);
+                    failedCount++;
+                }
             }
 
-            return false;
+            return [0, failedCount];
         }
     }
 
@@ -793,108 +1144,274 @@ public class UTCSFCustomerPushService
 ]]></Source>
 			</Method>
 			<Method>
-				<Name>parseCustomerPushResponse</Name>
+				<Name>parseBatchResultsMap</Name>
 				<Source><![CDATA[
     /// <summary>
-    /// Parses the JSON response returned by the Salesforce Customer Push Apex REST endpoint
-    /// to extract the Salesforce Account ID and check for record-level errors.
+    /// Parses the Salesforce v1.6 JSON response and maps each element of <c>results[]</c> to its 1-based
+    /// queue position (using <c>results[i].index + 1</c>, or positional fallback).
+    /// Each map entry holds:
+    /// <c>[boolean isSuccess, boolean isPermanentFailure, str rowStatus, str matchedOn, str sfAccountId, str sfContactId, str warningsText, str errorsText]</c>.
     /// </summary>
-    /// <param name = "_responsePayload">Raw JSON response string.</param>
-    /// <returns>Container of [boolean isSuccess, str salesforceAccountId, str errorMessage].</returns>
-    protected container parseCustomerPushResponse(str _responsePayload)
+    protected Map parseBatchResultsMap(str _responsePayload, int _expectedCount)
     {
-        boolean isSuccess           = true;
-        str     salesforceAccountId = '';
-        str     errorMessage        = '';
+        Map resultsByOneBasedIdx = new Map(Types::Integer, Types::Container);
 
         if (!_responsePayload)
         {
-            return [true, '', ''];
+            for (int idx = 1; idx <= _expectedCount; idx++)
+            {
+                resultsByOneBasedIdx.insert(idx, [false, false, '', '', '', '', '', 'Empty 2xx response body from Salesforce.']);
+            }
+            return resultsByOneBasedIdx;
         }
 
         try
         {
             JObject responseJson = JObject::Parse(_responsePayload);
+            JToken  resultsToken = responseJson.GetValue('results');
 
-            // Check top-level salesforceAccountId or id
-            JToken topSfId = responseJson.GetValue('salesforceAccountId');
-            if (topSfId == null)
-            {
-                topSfId = responseJson.GetValue('id');
-            }
-            if (topSfId != null && topSfId.Type != JTokenType::Null)
-            {
-                salesforceAccountId = topSfId.ToString();
-            }
-
-            // Check top-level success flag if present
-            JToken topSuccess = responseJson.GetValue('success');
-            if (topSuccess != null && topSuccess.Type == JTokenType::Boolean)
-            {
-                isSuccess = System.Convert::ToBoolean(topSuccess);
-            }
-
-            // Check results array (e.g. { "results": [ { "salesforceAccountId": "001...", "success": true, "errors": [] } ] })
-            JToken resultsToken = responseJson.GetValue('results');
             if (resultsToken != null && resultsToken.Type == JTokenType::Array)
             {
                 JArray resultsArray = resultsToken as JArray;
-                if (resultsArray != null && resultsArray.Count > 0)
+                int    arrayCount   = resultsArray != null ? resultsArray.Count : 0;
+
+                for (int i = 0; i < arrayCount; i++)
                 {
-                    JObject firstResult = resultsArray.get_Item(0) as JObject;
-                    if (firstResult != null)
+                    JObject itemObj = resultsArray.get_Item(i) as JObject;
+                    if (itemObj == null)
                     {
-                        JToken itemSfId = firstResult.GetValue('salesforceAccountId');
-                        if (itemSfId == null)
-                        {
-                            itemSfId = firstResult.GetValue('accountId');
-                        }
-                        if (itemSfId == null)
-                        {
-                            itemSfId = firstResult.GetValue('id');
-                        }
-                        if (itemSfId != null && itemSfId.Type != JTokenType::Null)
-                        {
-                            salesforceAccountId = itemSfId.ToString();
-                        }
-
-                        JToken itemSuccess = firstResult.GetValue('success');
-                        if (itemSuccess != null && itemSuccess.Type == JTokenType::Boolean)
-                        {
-                            isSuccess = System.Convert::ToBoolean(itemSuccess);
-                        }
-
-                        JToken itemStatus = firstResult.GetValue('status');
-                        if (itemStatus != null && strLwr(itemStatus.ToString()) == 'error')
-                        {
-                            isSuccess = false;
-                        }
-
-                        JToken itemMessage = firstResult.GetValue('message');
-                        if (itemMessage == null)
-                        {
-                            itemMessage = firstResult.GetValue('errorMessage');
-                        }
-                        if (itemMessage == null)
-                        {
-                            itemMessage = firstResult.GetValue('errors');
-                        }
-                        if (itemMessage != null && itemMessage.Type != JTokenType::Null)
-                        {
-                            errorMessage = itemMessage.ToString();
-                        }
+                        continue;
                     }
+
+                    int zeroBasedIndex = i;
+                    JToken indexToken = itemObj.GetValue('index');
+                    if (indexToken != null && indexToken.Type == JTokenType::Integer)
+                    {
+                        zeroBasedIndex = System.Convert::ToInt32(indexToken);
+                    }
+
+                    int oneBasedIdx = zeroBasedIndex + 1;
+                    resultsByOneBasedIdx.insert(oneBasedIdx, this.parseSingleRowResult(itemObj));
                 }
+            }
+            else if (_expectedCount == 1)
+            {
+                // Fallback for legacy single-object responses without a results[] wrapper
+                resultsByOneBasedIdx.insert(1, this.parseSingleRowResult(responseJson));
             }
         }
         catch
         {
-            // Non-JSON response on 2xx (e.g. proxy/gateway HTML page) should not be silently marked as Succeeded
-            isSuccess    = false;
-            errorMessage = strFmt('Unexpected non-JSON 2xx response from Salesforce: %1', subStr(_responsePayload, 1, 500));
+            str parseErr = strFmt('Unexpected non-JSON 2xx response from Salesforce: %1', subStr(_responsePayload, 1, 500));
+            for (int idx = 1; idx <= _expectedCount; idx++)
+            {
+                resultsByOneBasedIdx.insert(idx, [false, false, '', '', '', '', '', parseErr]);
+            }
         }
 
-        return [isSuccess, salesforceAccountId, errorMessage];
+        return resultsByOneBasedIdx;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parseSingleRowResult</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Evaluates a single Salesforce v1.6 row result <c>JObject</c> according to the v1.6 specification:
+    /// - <c>created</c>, <c>updated</c>, <c>unchanged</c>, <c>skipped</c>, <c>matched</c>, <c>merged</c> -&gt; Success (log <c>warnings</c>)
+    /// - <c>retry</c> -&gt; Transient lock failure (<c>isPermanentFailure = false</c>, retry in batch)
+    /// - <c>error</c> -&gt; Permanent validation failure (<c>isPermanentFailure = true</c>, fix data in D365)
+    /// </summary>
+    private container parseSingleRowResult(JObject _itemObj)
+    {
+        boolean isSuccess          = false;
+        boolean isPermanentFailure = false;
+        str     rowStatus          = '';
+        str     matchedOn          = '';
+        str     sfAccountId        = '';
+        str     sfContactId        = '';
+        str     warningsText       = '';
+        str     errorsText         = '';
+
+        JToken sfAccountToken = _itemObj.GetValue('salesforceAccountId');
+        if (sfAccountToken == null)
+        {
+            sfAccountToken = _itemObj.GetValue('accountId');
+        }
+        if (sfAccountToken == null)
+        {
+            sfAccountToken = _itemObj.GetValue('id');
+        }
+        if (sfAccountToken != null && sfAccountToken.Type != JTokenType::Null)
+        {
+            sfAccountId = sfAccountToken.ToString();
+        }
+
+        JToken sfContactToken = _itemObj.GetValue('salesforcePersonContactId');
+        if (sfContactToken == null)
+        {
+            sfContactToken = _itemObj.GetValue('personContactId');
+        }
+        if (sfContactToken != null && sfContactToken.Type != JTokenType::Null)
+        {
+            sfContactId = sfContactToken.ToString();
+        }
+
+        JToken matchedOnToken = _itemObj.GetValue('matchedOn');
+        if (matchedOnToken != null && matchedOnToken.Type != JTokenType::Null)
+        {
+            matchedOn = matchedOnToken.ToString();
+        }
+
+        JToken statusToken = _itemObj.GetValue('status');
+        if (statusToken != null && statusToken.Type != JTokenType::Null)
+        {
+            rowStatus = strLwr(strLRTrim(statusToken.ToString()));
+        }
+
+        warningsText = this.joinJsonTokenStrings(_itemObj.GetValue('warnings'));
+        errorsText   = this.joinJsonTokenStrings(_itemObj.GetValue('errors'));
+
+        if (errorsText == '')
+        {
+            JToken fallbackErr = _itemObj.GetValue('errorMessage');
+            if (fallbackErr == null)
+            {
+                fallbackErr = _itemObj.GetValue('message');
+            }
+            if (fallbackErr != null && fallbackErr.Type != JTokenType::Null)
+            {
+                errorsText = fallbackErr.ToString();
+            }
+        }
+
+        // Legacy fallback when status is absent but boolean success is present
+        if (rowStatus == '')
+        {
+            JToken successToken = _itemObj.GetValue('success');
+            if (successToken != null && successToken.Type == JTokenType::Boolean)
+            {
+                rowStatus = System.Convert::ToBoolean(successToken) ? 'created' : 'error';
+            }
+        }
+
+        switch (rowStatus)
+        {
+            case 'created':
+            case 'updated':
+            case 'unchanged':
+            case 'skipped':
+            case 'merged':
+                isSuccess          = true;
+                isPermanentFailure = false;
+                break;
+
+            case 'matched':
+                isSuccess          = true;
+                isPermanentFailure = false;
+                warningsText       = (warningsText != '')
+                    ? ('[Action Required: Merge duplicate Parties in D365] ' + warningsText)
+                    : '[Action Required: Merge duplicate Parties in D365] Another row in the same call matched the same Salesforce customer.';
+                break;
+
+            case 'retry':
+                isSuccess          = false;
+                isPermanentFailure = false;
+                if (errorsText == '')
+                {
+                    errorsText = 'Salesforce record lock (status: retry). Queued for retry.';
+                }
+                break;
+
+            case 'error':
+                isSuccess          = false;
+                isPermanentFailure = true;
+                if (errorsText == '')
+                {
+                    errorsText = 'Row rejected by Salesforce validation (status: error).';
+                }
+                else
+                {
+                    errorsText = '[Row Error] ' + errorsText;
+                }
+                break;
+
+            default:
+                isSuccess          = false;
+                isPermanentFailure = false;
+                errorsText         = strFmt('Unrecognized Salesforce row status "%1". %2', rowStatus, errorsText);
+                break;
+        }
+
+        return [isSuccess, isPermanentFailure, rowStatus, matchedOn, sfAccountId, sfContactId, warningsText, errorsText];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>joinJsonTokenStrings</Name>
+				<Source><![CDATA[
+    private str joinJsonTokenStrings(JToken _token)
+    {
+        if (_token == null || _token.Type == JTokenType::Null)
+        {
+            return '';
+        }
+
+        if (_token.Type == JTokenType::Array)
+        {
+            JArray tokenArray = _token as JArray;
+            int    count      = tokenArray != null ? tokenArray.Count : 0;
+            str    joined     = '';
+
+            for (int i = 0; i < count; i++)
+            {
+                JToken elem = tokenArray.get_Item(i);
+                if (elem != null && elem.Type != JTokenType::Null)
+                {
+                    str itemText = strLRTrim(elem.ToString());
+                    if (itemText != '')
+                    {
+                        joined = (joined == '') ? itemText : (joined + '; ' + itemText);
+                    }
+                }
+            }
+
+            return joined;
+        }
+
+        return strLRTrim(_token.ToString());
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parseCustomerPushResponse</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Backward-compatible wrapper returning <c>[boolean isSuccess, str salesforceAccountId, str errorMessage]</c>
+    /// for callers inspecting a single-customer response payload.
+    /// </summary>
+    protected container parseCustomerPushResponse(str _responsePayload)
+    {
+        Map resultsMap = this.parseBatchResultsMap(_responsePayload, 1);
+        if (resultsMap.exists(1))
+        {
+            boolean isSuccess;
+            boolean isPermanentFailure;
+            str     rowStatus;
+            str     matchedOn;
+            str     sfAccountId;
+            str     sfContactId;
+            str     warningsText;
+            str     errorsText;
+
+            [isSuccess, isPermanentFailure, rowStatus, matchedOn, sfAccountId, sfContactId, warningsText, errorsText] = resultsMap.lookup(1);
+            return [isSuccess, sfAccountId, errorsText];
+        }
+
+        return [false, '', 'Unable to parse Salesforce response.'];
     }
 
 ]]></Source>

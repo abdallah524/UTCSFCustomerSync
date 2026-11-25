@@ -24,6 +24,17 @@
 			<ObjectType>MenuItemDisplay</ObjectType>
 			<Forms />
 		</AxSecurityEntryPointReference>
+		<AxSecurityEntryPointReference>
+			<Name>UTCSFCustomerState</Name>
+			<Grant>
+				<Create>Allow</Create>
+				<Read>Allow</Read>
+				<Update>Allow</Update>
+			</Grant>
+			<ObjectName>UTCSFCustomerState</ObjectName>
+			<ObjectType>MenuItemDisplay</ObjectType>
+			<Forms />
+		</AxSecurityEntryPointReference>
 	</EntryPoints>
 	<FormControlOverrides />
 </AxSecurityPrivilege>

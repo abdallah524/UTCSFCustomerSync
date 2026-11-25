@@ -1,0 +1,31 @@
+sequenceDiagram
+    autonumber
+    actor User as D365 User / POS
+    participant D365 as D365 TTS (CustTable)
+    participant Handler as UTCSFCustomerChangeHandler
+    participant Queue as UTCSFCustomerPushQueue
+    participant Disp as UTCSFPostCommitDispatcher
+    participant Worker as Async Worker (runAsync)
+    participant SF as Salesforce API
+
+    User->>D365: Save New B2C Person Customer (utc)
+    Note over D365: DirPerson & DirPersonName inserted first,<br/>then CustTable inserted (ttsLevel > 0)
+    D365->>Handler: CustTable_onInserted / CustTable_onUpdated
+    Handler->>Handler: isEligibleCustomer?<br/>(utc, IsEnabled, Person, Retail/B2C E-Comm/Service/Staff<br/>or Out-of-Scope Transition e.g. Coops, Name)
+
+    alt Eligible
+        Handler->>Queue: enqueue() -> Insert Pending row
+        Handler->>Disp: registerQueueItemForCommit(queueRecId)
+        D365-->>User: Customer Saved (ttscommit, non-blocking)
+        D365->>Disp: appl.onTtsNotifyCommit()
+        Disp->>Worker: Global::runAsync(processQueueItemAsync)
+        Worker->>Queue: markProcessing(queueRecId) [Pending -> Processing]
+        Worker->>Worker: buildPayloadJson() (UTF-8 CustomersV3)
+        Worker->>SF: getAccessToken() (cached 120m or POST /services/oauth2/token)
+        Worker->>SF: POST /services/apexrest/utc/v1/customers<br/>(Bearer + X-Request-Id)
+        SF-->>Worker: 200/201 OK + salesforceAccountId
+        Worker->>Queue: Write UTCSFCustomerPushLog & markSucceeded()
+    else Not Eligible
+        Handler-->>D365: Skip (no queue entry)
+        D365-->>User: Customer Saved
+    end

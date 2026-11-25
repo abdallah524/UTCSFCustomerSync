@@ -4,28 +4,29 @@ Native Microsoft Dynamics 365 Finance & Operations (`X++` / Visual Studio 2022) 
 
 ---
 
-## Architecture Overview
+## Architecture Overview (Salesforce Customer Push API v1.6)
 
-1. **Change Detection Triggers (Chain of Command):**
-   - `UTCSFCustTable_Extension` (`CustTable.insert()` and `CustTable.update()`)
-   - `UTCSFDirPerson_Extension` & `UTCSFDirPersonName_Extension` (`DirPerson.update()`, `DirPersonName.insert()`, and `DirPersonName.update()` when `FirstName`, `MiddleName`, or `LastName` changes -> resolves linked `CustTable`)
-   - `UTCSFLogisticsElectronicAddress_Extension` (`LogisticsElectronicAddress.insert()` and `LogisticsElectronicAddress.update()` when a primary phone or primary email changes -> resolves linked `CustTable` via `DirPartyLocation`)
+1. **Change Detection Triggers (Events & Chain of Command):**
+   - `UTCSFCustTable_Extension` (`CustTable` `Inserted` and `Updated` events — detects group changes including out-of-scope transitions like `Retail` -> `Coops`, on-hold status `Blocked`, and party/account changes)
+   - `UTCSFDirPerson_Extension` & `UTCSFDirPersonName_Extension` (`DirPerson.update()`, `DirPersonName.insert()`, and `DirPersonName.update()` when `FirstName`, `MiddleName`, `LastName`, `Gender`, `LanguageId`, or primary phone/email pointers change -> resolves all linked `CustTable` accounts ordered main/oldest first)
+   - `UTCSFLogisticsElectronicAddress_Extension` & `UTCSFLogisticsPostalAddress_Extension` (detects primary phone/email and primary postal city/country updates -> resolves linked `CustTable` via `DirPartyLocation`)
+   - `UTCSFCustomerState` (`insert()` and `update()` when SMS, WhatsApp, or Email marketing consent changes -> auto-stamps `ConsentCapturedDateTime` in UTC and enqueues the customer)
 2. **Pre-Flight Filtering (`UTCSFCustomerPushService.isEligibleCustomer`):**
    - `dataAreaId == "utc"`
    - `PartyType == "Person"` (skips `"Organization"`)
-   - `CustomerGroupId` in `["Retail", "Cash", "B2C E-Comm"]`
+   - `CustomerGroupId` in configurable in-scope list: `["Retail", "B2C E-Comm", "Service", "Staff"]` (`Cash` excluded), **OR** an already-synced customer transitioning to an out-of-scope group (e.g., `"Coops"`) so Salesforce removes them from marketing audiences.
    - At least one of `PersonFirstName` or `PersonLastName` is populated.
-3. **Decoupled Staging Queue & Post-Commit Dispatch (`UTCSFCustomerPushQueue` & `UTCSFPostCommitDispatcher`):**
+3. **Decoupled Staging Queue, Async Coalescing & Batching (`UTCSFCustomerPushQueue`, `UTCSFPostCommitDispatcher`, `UTCSFCustomerPushBatchService`):**
    - Enqueues eligible changes inside the database transaction without making blocking network calls.
-   - Subscribes to `appl.onTtsNotifyCommit` to trigger `Global::runAsync` (`UTCSFCustomerPushBatchService::processQueueItemAsync`) immediately after the outer transaction commits, while `UTCSFCustomerPushBatchController` provides a recurring SysOperation batch job for resilient retry sweeps.
-4. **OAuth2 Token Caching & HTTP Client (`UTCSFCustomerPushService`):**
-   - Reads `TokenUrl`, `ApiEndpointUrl`, `ClientId`, and encrypted `ClientSecret` exclusively from `UTCSFIntegrationParameters` (no hardcoded credentials in X++).
-   - Caches the OAuth2 `client_credentials` Bearer token in `UTCSFIntegrationParameters` for **120 minutes** (with a 5-minute safety buffer).
-   - On `HTTP 401`, refreshes the cached token once and retries automatically.
-   - Never retries `HTTP 400` (`Bad Request`).
-   - Sends `Content-Type: application/json; charset=utf-8` (preserving Arabic characters) and `X-Request-Id: <unique-D365-GUID>`.
-5. **Audit Logging (`UTCSFCustomerPushLog`):**
-   - Logs every outbound call with `CustAccount`, `PartyNumber`, `RequestId`, `HttpStatus`, `SyncStatus`, `SalesforceAccountId`, `RequestPayload`, `ResponsePayload`, `DurationMs`, and `CreatedDateTime`.
+   - Subscribes to `appl.onTtsNotifyCommit` to trigger `Global::runAsync` (`UTCSFCustomerPushBatchService::processQueueItemAsync`) immediately after the outer transaction commits, coalescing rapid multi-datasource saves on the same customer to prevent Salesforce record locks.
+   - `UTCSFCustomerPushBatchController` provides a recurring SysOperation batch job supporting chunked payloads of up to **200 customers per API call** (`BatchSizePerApiCall`).
+4. **v1.6 Payload, OAuth2 Caching & Response Handling (`UTCSFCustomerPushService`):**
+   - Computes composite `ModifiedDateTimeCustTable` across `CustTable`, GAB (`DirPersonName`, `LogisticsPostalAddress`), consent timestamps, and queue event time so GAB/consent updates always advance in UTC.
+   - Populates `MarketingConsentSms`, `MarketingConsentWhatsApp`, `MarketingConsentEmail`, `ConsentCapturedDateTime`, and sibling `AliasCustomerAccounts`.
+   - Handles Salesforce v1.6 row statuses: `created`, `updated`, `unchanged`, `skipped`, `matched`, `merged` (success + warning logging), `retry` (transient record lock -> retried by batch), and `error` (permanent validation failure -> never blind-retried).
+5. **Companion Sync State & Audit Logging (`UTCSFCustomerState` & `UTCSFCustomerPushLog`):**
+   - `UTCSFCustomerState` stores per-customer `SalesforceAccountId`, `SalesforcePersonContactId`, `IsSynced`, `LastSyncedCustGroup`, and marketing consent flags without locking `CustTable`.
+   - `UTCSFCustomerPushLog` logs every outbound call with `CustAccount`, `PartyNumber`, `RequestId`, `HttpStatus`, `SyncStatus` (including `SucceededWithWarnings`), `RowStatus`, `MatchedOn`, `SalesforceAccountId`, `SalesforcePersonContactId`, `Warnings`, `RequestPayload`, `ResponsePayload`, and `DurationMs`.
 
 ---
 

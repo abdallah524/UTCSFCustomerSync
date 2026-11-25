@@ -15,10 +15,26 @@ public class UTCSFIntegrationParameters extends common
     {
         super();
 
-        this.Key                = 0;
-        this.IsEnabled          = NoYes::Yes;
-        this.MaxRetryCount      = 3;
-        this.HttpTimeoutSeconds = 30;
+        this.Key                   = 0;
+        this.IsEnabled             = NoYes::Yes;
+        this.MaxRetryCount         = 3;
+        this.HttpTimeoutSeconds    = 30;
+        this.InScopeCustomerGroups = 'Retail,B2C E-Comm,Service,Staff';
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>effectiveInScopeCustomerGroups</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns the configured comma-separated in-scope customer groups, falling back to
+    /// the v1.6 default (<c>Retail,B2C E-Comm,Service,Staff</c>) if blank on an upgraded singleton row.
+    /// </summary>
+    public str effectiveInScopeCustomerGroups()
+    {
+        str configured = strLRTrim(this.InScopeCustomerGroups);
+        return configured != '' ? configured : 'Retail,B2C E-Comm,Service,Staff';
     }
 
 ]]></Source>
@@ -335,6 +351,9 @@ public class UTCSFIntegrationParameters extends common
 				<AxTableFieldGroupField>
 					<DataField>HttpTimeoutSeconds</DataField>
 				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InScopeCustomerGroups</DataField>
+				</AxTableFieldGroupField>
 			</Fields>
 		</AxTableFieldGroup>
 		<AxTableFieldGroup>
@@ -424,6 +443,11 @@ public class UTCSFIntegrationParameters extends common
 			<Name>HttpTimeoutSeconds</Name>
 			<HelpText>HTTP request timeout in seconds for Salesforce API calls.</HelpText>
 			<Label>HTTP Timeout (Seconds)</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>InScopeCustomerGroups</Name>
+			<ExtendedDataType>UTCSFEligibleGroups</ExtendedDataType>
 		</AxTableField>
 	</Fields>
 	<FullTextIndexes />

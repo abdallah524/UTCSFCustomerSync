@@ -1,0 +1,544 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>UTCSFCustomerState</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class UTCSFCustomerState extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initValue</Name>
+				<Source><![CDATA[
+    public void initValue()
+    {
+        super();
+
+        this.ConsentSms      = UTCSFMarketingConsent::NotCaptured;
+        this.ConsentWhatsApp = UTCSFMarketingConsent::NotCaptured;
+        this.ConsentEmail    = UTCSFMarketingConsent::NotCaptured;
+        this.IsSynced        = NoYes::No;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    public void insert()
+    {
+        boolean hasExplicitConsent = (this.ConsentSms      != UTCSFMarketingConsent::NotCaptured
+                                   || this.ConsentWhatsApp != UTCSFMarketingConsent::NotCaptured
+                                   || this.ConsentEmail    != UTCSFMarketingConsent::NotCaptured);
+
+        if (hasExplicitConsent && this.ConsentCapturedDateTime == DateTimeUtil::minValue())
+        {
+            this.ConsentCapturedDateTime = DateTimeUtil::utcNow();
+        }
+
+        super();
+
+        if (hasExplicitConsent && this.CustAccount)
+        {
+            UTCSFCustomerChangeHandler::tryEnqueueByCustAccount(this.CustAccount);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>update</Name>
+				<Source><![CDATA[
+    public void update()
+    {
+        UTCSFCustomerState origState = this.orig();
+
+        boolean hasConsentChange = (this.ConsentSms      != origState.ConsentSms
+                                 || this.ConsentWhatsApp != origState.ConsentWhatsApp
+                                 || this.ConsentEmail    != origState.ConsentEmail);
+
+        if (hasConsentChange)
+        {
+            // Salesforce v1.6 ignores consent updates without a newer ConsentCapturedDateTime
+            if (this.ConsentCapturedDateTime <= origState.ConsentCapturedDateTime)
+            {
+                this.ConsentCapturedDateTime = DateTimeUtil::utcNow();
+                if (this.ConsentCapturedDateTime <= origState.ConsentCapturedDateTime)
+                {
+                    this.ConsentCapturedDateTime = DateTimeUtil::addSeconds(origState.ConsentCapturedDateTime, 1);
+                }
+            }
+        }
+
+        super();
+
+        if (hasConsentChange && this.CustAccount)
+        {
+            UTCSFCustomerChangeHandler::tryEnqueueByCustAccount(this.CustAccount);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>find</Name>
+				<Source><![CDATA[
+    public static UTCSFCustomerState find(CustAccount _custAccount, boolean _forUpdate = false)
+    {
+        UTCSFCustomerState stateRecord;
+
+        if (_custAccount)
+        {
+            stateRecord.selectForUpdate(_forUpdate);
+
+            select firstonly stateRecord
+                index CustAccountIdx
+                where stateRecord.CustAccount == _custAccount;
+        }
+
+        return stateRecord;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isCustomerSynced</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns true if the customer has previously been synced to Salesforce (either tracked in
+    /// <c>UTCSFCustomerState</c> or recorded in <c>UTCSFCustomerPushQueue</c> prior to v1.6 upgrade).
+    /// Used to ensure customers moved to out-of-scope groups (e.g. Retail -&gt; Coops) still push updates.
+    /// </summary>
+    public static boolean isCustomerSynced(CustAccount _custAccount)
+    {
+        if (!_custAccount)
+        {
+            return false;
+        }
+
+        UTCSFCustomerState stateRecord = UTCSFCustomerState::find(_custAccount);
+        if (stateRecord.RecId != 0 && (stateRecord.IsSynced == NoYes::Yes || stateRecord.SalesforceAccountId != ''))
+        {
+            return true;
+        }
+
+        UTCSFCustomerPushQueue priorSucceededQueue;
+        select firstonly RecId from priorSucceededQueue
+            index CustAccountStatusIdx
+            where priorSucceededQueue.CustAccount == _custAccount
+               && priorSucceededQueue.Status      == UTCSFCustomerPushStatus::Succeeded
+               && priorSucceededQueue.SalesforceAccountId != '';
+
+        return priorSucceededQueue.RecId != 0;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>upsertSyncResult</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Persists the latest Salesforce sync state for a customer without touching <c>CustTable</c>
+    /// (avoiding <c>CustTable</c> lock contention and <c>UpdateConflict</c> errors on POS/UI saves).
+    /// </summary>
+    public static void upsertSyncResult(
+        CustAccount              _custAccount,
+        DirPartyNumber           _partyNumber,
+        CustGroupId              _custGroup,
+        UTCSFSalesforceAccountId _sfAccountId,
+        UTCSFSalesforceContactId _sfContactId,
+        UTCSFRowStatus           _rowStatus)
+    {
+        #OCCRetryCount
+        UTCSFCustomerState stateRecord;
+
+        if (!_custAccount)
+        {
+            return;
+        }
+
+        try
+        {
+            ttsbegin;
+
+            stateRecord = UTCSFCustomerState::find(_custAccount, true);
+            if (!stateRecord.RecId)
+            {
+                stateRecord.clear();
+                stateRecord.initValue();
+                stateRecord.CustAccount = _custAccount;
+            }
+
+            if (_partyNumber)
+            {
+                stateRecord.PartyNumber = _partyNumber;
+            }
+            if (_custGroup)
+            {
+                stateRecord.LastSyncedCustGroup = _custGroup;
+            }
+            if (_sfAccountId)
+            {
+                stateRecord.SalesforceAccountId = _sfAccountId;
+            }
+            if (_sfContactId)
+            {
+                stateRecord.SalesforcePersonContactId = _sfContactId;
+            }
+
+            stateRecord.LastRowStatus      = _rowStatus;
+            stateRecord.LastSyncedDateTime = DateTimeUtil::utcNow();
+
+            if (_sfAccountId != ''
+                || _rowStatus == 'created'
+                || _rowStatus == 'updated'
+                || _rowStatus == 'unchanged'
+                || _rowStatus == 'matched'
+                || _rowStatus == 'merged')
+            {
+                stateRecord.IsSynced = NoYes::Yes;
+            }
+
+            if (stateRecord.RecId)
+            {
+                stateRecord.update();
+            }
+            else
+            {
+                stateRecord.insert();
+            }
+
+            ttscommit;
+        }
+        catch (Exception::DuplicateKeyException)
+        {
+            if (appl.ttsLevel() == 0 && xSession::currentRetryCount() < #RetryNum)
+            {
+                retry;
+            }
+            throw Exception::DuplicateKeyExceptionNotRecovered;
+        }
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0 && xSession::currentRetryCount() < #RetryNum)
+            {
+                retry;
+            }
+            throw Exception::UpdateConflictNotRecovered;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateCustomerConsent</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates marketing consent flags for a customer, stamps a new <c>ConsentCapturedDateTime</c>,
+    /// and automatically enqueues an outbound Salesforce v1.6 customer update.
+    /// </summary>
+    public static UTCSFCustomerState updateCustomerConsent(
+        CustAccount           _custAccount,
+        UTCSFMarketingConsent _consentSms,
+        UTCSFMarketingConsent _consentWhatsApp,
+        UTCSFMarketingConsent _consentEmail,
+        utcdatetime           _capturedDateTime = DateTimeUtil::minValue())
+    {
+        UTCSFCustomerState stateRecord;
+
+        if (!_custAccount)
+        {
+            return stateRecord;
+        }
+
+        ttsbegin;
+
+        stateRecord = UTCSFCustomerState::find(_custAccount, true);
+        if (!stateRecord.RecId)
+        {
+            CustTable custTable = CustTable::find(_custAccount);
+            DirPartyTable dirParty = DirPartyTable::findRec(custTable.Party);
+
+            stateRecord.clear();
+            stateRecord.initValue();
+            stateRecord.CustAccount = _custAccount;
+            stateRecord.PartyNumber = dirParty.PartyNumber;
+        }
+
+        stateRecord.ConsentSms      = _consentSms;
+        stateRecord.ConsentWhatsApp = _consentWhatsApp;
+        stateRecord.ConsentEmail    = _consentEmail;
+
+        if (_capturedDateTime != DateTimeUtil::minValue())
+        {
+            stateRecord.ConsentCapturedDateTime = _capturedDateTime;
+        }
+
+        if (stateRecord.RecId)
+        {
+            stateRecord.update();
+        }
+        else
+        {
+            stateRecord.insert();
+        }
+
+        ttscommit;
+
+        return stateRecord;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<DeveloperDocumentation>Stores per-customer Salesforce synchronization state (Account ID, Contact ID, last synced group) and B2C marketing consent flags (SMS, WhatsApp, Email, ConsentCapturedDateTime) without locking CustTable.</DeveloperDocumentation>
+	<Label>Salesforce Customer Sync State &amp; Consent</Label>
+	<TableGroup>Main</TableGroup>
+	<TitleField1>CustAccount</TitleField1>
+	<TitleField2>SalesforceAccountId</TitleField2>
+	<AllowRowVersionChangeTracking>No</AllowRowVersionChangeTracking>
+	<CacheLookup>NotInTTS</CacheLookup>
+	<ClusteredIndex>CustAccountIdx</ClusteredIndex>
+	<CreatedBy>Yes</CreatedBy>
+	<CreatedDateTime>Yes</CreatedDateTime>
+	<ModifiedBy>Yes</ModifiedBy>
+	<ModifiedDateTime>Yes</ModifiedDateTime>
+	<PrimaryIndex>CustAccountIdx</PrimaryIndex>
+	<ReplacementKey>CustAccountIdx</ReplacementKey>
+	<SaveDataPerCompany>Yes</SaveDataPerCompany>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>CustAccount</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PartyNumber</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SalesforceAccountId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>IsSynced</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ConsentSms</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ConsentWhatsApp</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ConsentEmail</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ConsentCapturedDateTime</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>CustAccount</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SalesforceAccountId</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>CustAccount</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>SyncState</Name>
+			<Label>Salesforce Sync State</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>CustAccount</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PartyNumber</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>IsSynced</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SalesforceAccountId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SalesforcePersonContactId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>LastSyncedCustGroup</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>LastRowStatus</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>LastSyncedDateTime</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>MarketingConsent</Name>
+			<Label>Marketing Consent</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>ConsentSms</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ConsentWhatsApp</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ConsentEmail</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ConsentCapturedDateTime</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>CustAccount</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>CustAccount</ExtendedDataType>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>PartyNumber</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>DirPartyNumber</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>IsSynced</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>NoYesId</ExtendedDataType>
+			<HelpText>Indicates whether this customer already exists in Salesforce.</HelpText>
+			<Label>Synced to Salesforce</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>SalesforceAccountId</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>UTCSFSalesforceAccountId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>SalesforcePersonContactId</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>UTCSFSalesforceContactId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>LastSyncedCustGroup</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>CustGroupId</ExtendedDataType>
+			<Label>Last Synced Group</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>LastRowStatus</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>UTCSFRowStatus</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldUtcDateTime">
+			<Name>LastSyncedDateTime</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>TransDateTime</ExtendedDataType>
+			<Label>Last Synced (UTC)</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>ConsentSms</Name>
+			<HelpText>SMS marketing consent synced to Salesforce (MarketingConsentSms).</HelpText>
+			<Label>SMS Consent</Label>
+			<EnumType>UTCSFMarketingConsent</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>ConsentWhatsApp</Name>
+			<HelpText>WhatsApp marketing consent synced to Salesforce (MarketingConsentWhatsApp).</HelpText>
+			<Label>WhatsApp Consent</Label>
+			<EnumType>UTCSFMarketingConsent</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>ConsentEmail</Name>
+			<HelpText>Email marketing consent synced to Salesforce (MarketingConsentEmail).</HelpText>
+			<Label>Email Consent</Label>
+			<EnumType>UTCSFMarketingConsent</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldUtcDateTime">
+			<Name>ConsentCapturedDateTime</Name>
+			<ExtendedDataType>TransDateTime</ExtendedDataType>
+			<HelpText>UTC timestamp when marketing consent was captured or last updated.</HelpText>
+			<Label>Consent Captured (UTC)</Label>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes>
+		<AxTableIndex>
+			<Name>CustAccountIdx</Name>
+			<AlternateKey>Yes</AlternateKey>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>CustAccount</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>PartyNumberIdx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>PartyNumber</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+	</Indexes>
+	<Mappings />
+	<Relations>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>CustTable</Name>
+			<Cardinality>ZeroOne</Cardinality>
+			<RelatedTable>CustTable</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>CustAccount</Name>
+					<Field>CustAccount</Field>
+					<RelatedField>AccountNum</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

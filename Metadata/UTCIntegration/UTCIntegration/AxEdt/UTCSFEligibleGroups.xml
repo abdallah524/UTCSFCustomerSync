@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxEdt xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns=""
+	i:type="AxEdtString">
+	<Name>UTCSFEligibleGroups</Name>
+	<HelpText>Comma-separated list of in-scope D365 Customer Group IDs eligible for Salesforce B2C sync (default: Retail,B2C E-Comm,Service,Staff).</HelpText>
+	<Label>In-Scope Customer Groups</Label>
+	<ArrayElements />
+	<Relations />
+	<TableReferences />
+	<StringSize>250</StringSize>
+</AxEdt>

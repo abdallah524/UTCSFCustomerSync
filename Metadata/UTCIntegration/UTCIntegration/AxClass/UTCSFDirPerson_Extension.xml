@@ -4,8 +4,8 @@
 	<SourceCode>
 		<Declaration><![CDATA[
 /// <summary>
-/// Chain of Command extension on <c>DirPerson</c> to detect person name, alias, or gender updates
-/// and resolve the linked <c>CustTable</c> record in company 'utc' for Salesforce synchronization.
+/// Chain of Command extension on <c>DirPerson</c> to detect person name, alias, gender, language,
+/// or primary phone/email pointer updates and resolve linked <c>CustTable</c> records in company 'utc'.
 /// </summary>
 [ExtensionOf(tableStr(DirPerson))]
 public final class UTCSFDirPerson_Extension
@@ -18,15 +18,17 @@ public final class UTCSFDirPerson_Extension
 				<Source><![CDATA[
     public void update()
     {
-        DirPerson origPerson    = this.orig();
-        boolean   hasNameChange = (this.Name       != origPerson.Name
-                                || this.NameAlias  != origPerson.NameAlias
-                                || this.Gender     != origPerson.Gender
-                                || this.LanguageId != origPerson.LanguageId);
+        DirPerson origPerson        = this.orig();
+        boolean   hasRelevantChange = (this.Name                != origPerson.Name
+                                    || this.NameAlias           != origPerson.NameAlias
+                                    || this.Gender              != origPerson.Gender
+                                    || this.LanguageId          != origPerson.LanguageId
+                                    || this.PrimaryContactPhone != origPerson.PrimaryContactPhone
+                                    || this.PrimaryContactEmail != origPerson.PrimaryContactEmail);
 
         next update();
 
-        if (hasNameChange)
+        if (hasRelevantChange)
         {
             UTCSFCustomerChangeHandler::tryEnqueueByPartyRecId(this.RecId);
         }

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxMenuItemDisplay xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V1">
+	<Name>UTCSFCustomerState</Name>
+	<HelpText>View Salesforce customer sync state (Account ID, Contact ID, last synced group) and manage B2C SMS, WhatsApp, and Email marketing consent.</HelpText>
+	<Label>Salesforce Customer Sync State &amp; Consent</Label>
+	<Object>UTCSFCustomerState</Object>
+</AxMenuItemDisplay>

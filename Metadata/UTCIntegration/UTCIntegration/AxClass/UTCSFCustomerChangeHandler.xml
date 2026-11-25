@@ -5,8 +5,9 @@
 		<Declaration><![CDATA[
 /// <summary>
 /// Coordinates real-time change detection across <c>CustTable</c>, <c>DirPerson</c> / <c>DirPersonName</c>,
-/// and <c>LogisticsElectronicAddress</c>. Evaluates customer eligibility, resolves Retail POS channel
-/// metadata, enqueues records into <c>UTCSFCustomerPushQueue</c>, and dispatches post-commit async execution.
+/// <c>LogisticsElectronicAddress</c>, <c>LogisticsPostalAddress</c>, and <c>UTCSFCustomerState</c> (consent).
+/// Evaluates customer eligibility, resolves originating channel metadata, enqueues records into
+/// <c>UTCSFCustomerPushQueue</c>, and dispatches post-commit async execution.
 /// </summary>
 public class UTCSFCustomerChangeHandler
 {
@@ -23,7 +24,8 @@ public class UTCSFCustomerChangeHandler
     /// enqueues it in <c>UTCSFCustomerPushQueue</c> and schedules an immediate non-blocking push upon TTS commit.
     /// </summary>
     /// <param name = "_custTable">The <c>CustTable</c> record that was created or modified.</param>
-    public static void tryEnqueueCustTable(CustTable _custTable)
+    /// <param name = "_allowOutOfScopeTransition">True when the customer just transitioned from an in-scope group to an out-of-scope group.</param>
+    public static void tryEnqueueCustTable(CustTable _custTable, boolean _allowOutOfScopeTransition = false)
     {
         if (!_custTable.RecId || strLwr(_custTable.DataAreaId) != TargetCompanyId)
         {
@@ -41,10 +43,16 @@ public class UTCSFCustomerChangeHandler
                 }
 
                 UTCSFCustomerPushService pushService = UTCSFCustomerPushService::construct();
-                if (!pushService.isEligibleCustomer(_custTable))
+                boolean isEligible = pushService.isEligibleCustomer(_custTable, true)
+                    || (_allowOutOfScopeTransition && pushService.hasBasePersonEligibility(_custTable));
+
+                if (!isEligible)
                 {
                     return;
                 }
+
+                boolean allowOutOfScope = _allowOutOfScopeTransition
+                    || !pushService.isInScopeCustomerGroup(_custTable.CustGroup);
 
                 UTCSFSourceChannel    sourceChannel;
                 OMOperatingUnitNumber operatingUnitNumber;
@@ -56,7 +64,8 @@ public class UTCSFCustomerChangeHandler
                     _custTable.AccountNum,
                     sourceChannel,
                     operatingUnitNumber,
-                    terminal);
+                    terminal,
+                    allowOutOfScope);
 
                 if (queueRecord.RecId != 0)
                 {
@@ -76,11 +85,39 @@ public class UTCSFCustomerChangeHandler
 ]]></Source>
 			</Method>
 			<Method>
+				<Name>tryEnqueueByCustAccount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Resolves the <c>CustTable</c> in company 'utc' by account number (e.g. when marketing consent changes
+    /// in <c>UTCSFCustomerState</c>) and enqueues it if eligible.
+    /// </summary>
+    /// <param name = "_custAccount">Customer account number in company 'utc'.</param>
+    public static void tryEnqueueByCustAccount(CustAccount _custAccount)
+    {
+        if (!_custAccount)
+        {
+            return;
+        }
+
+        changecompany(TargetCompanyId)
+        {
+            CustTable custTable = CustTable::find(_custAccount);
+            if (custTable.RecId != 0)
+            {
+                UTCSFCustomerChangeHandler::tryEnqueueCustTable(custTable, false);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
 				<Name>tryEnqueueByPartyRecId</Name>
 				<Source><![CDATA[
     /// <summary>
-    /// Resolves the <c>CustTable</c> in company 'utc' linked to the given Global Address Book <c>DirPartyRecId</c>
-    /// and enqueues it if eligible.
+    /// Resolves all <c>CustTable</c> accounts in company 'utc' linked to the given Global Address Book
+    /// <c>DirPartyRecId</c> (ordered oldest/main account first so Salesforce applies main-account updates)
+    /// and enqueues them if eligible.
     /// </summary>
     /// <param name = "_partyRecId">The <c>DirPartyTable</c> / <c>DirPerson</c> RecId.</param>
     public static void tryEnqueueByPartyRecId(DirPartyRecId _partyRecId)
@@ -92,10 +129,13 @@ public class UTCSFCustomerChangeHandler
 
         changecompany(TargetCompanyId)
         {
-            CustTable custTable = CustTable::findByPartyRecId(_partyRecId);
-            if (custTable.RecId != 0)
+            CustTable custTable;
+
+            while select custTable
+                order by CreatedDateTime asc, RecId asc
+                where custTable.Party == _partyRecId
             {
-                UTCSFCustomerChangeHandler::tryEnqueueCustTable(custTable);
+                UTCSFCustomerChangeHandler::tryEnqueueCustTable(custTable, false);
             }
         }
     }
@@ -109,7 +149,7 @@ public class UTCSFCustomerChangeHandler
     /// Resolves any <c>CustTable</c> in company 'utc' associated with the specified <c>LogisticsLocationRecId</c>
     /// via <c>DirPartyLocation</c> and enqueues it if eligible.
     /// </summary>
-    /// <param name = "_locationRecId">The <c>LogisticsLocation</c> RecId from <c>LogisticsElectronicAddress.Location</c>.</param>
+    /// <param name = "_locationRecId">The <c>LogisticsLocation</c> RecId from electronic or postal address.</param>
     public static void tryEnqueueByLocationRecId(LogisticsLocationRecId _locationRecId)
     {
         if (!_locationRecId)
@@ -123,11 +163,12 @@ public class UTCSFCustomerChangeHandler
             CustTable        custTable;
 
             while select custTable
+                order by CreatedDateTime asc, RecId asc
                 exists join dirPartyLocation
                     where dirPartyLocation.Party    == custTable.Party
                        && dirPartyLocation.Location == _locationRecId
             {
-                UTCSFCustomerChangeHandler::tryEnqueueCustTable(custTable);
+                UTCSFCustomerChangeHandler::tryEnqueueCustTable(custTable, false);
             }
         }
     }
@@ -140,22 +181,52 @@ public class UTCSFCustomerChangeHandler
     /// <summary>
     /// Resolves the originating channel (<c>SourceChannel</c>), <c>OperatingUnitNumber</c>, and <c>Terminal</c>
     /// for a <c>CustTable</c> record without executing heavy <c>RetailTransactionTable</c> scans on the write path.
+    /// Preserves prior recorded channel metadata when a customer later changes group (e.g. to Staff or Coops).
     /// </summary>
     /// <param name = "_custTable">The customer record to inspect.</param>
     /// <returns>Container of <c>[UTCSFSourceChannel, OMOperatingUnitNumber, RetailTerminalId]</c>.</returns>
     public static container resolveRetailContext(CustTable _custTable)
     {
-        UTCSFSourceChannel    sourceChannel       = 'D365FO';
+        UTCSFSourceChannel    sourceChannel       = '';
         OMOperatingUnitNumber operatingUnitNumber = '';
         RetailTerminalId      terminal            = '';
 
-        if (_custTable.CustGroup == 'B2C E-Comm')
+        // Preserve earliest known channel/store/terminal if this customer was previously queued
+        if (_custTable.AccountNum)
         {
-            sourceChannel = 'E-Comm';
+            UTCSFCustomerPushQueue priorQueue;
+            select firstonly SourceChannel, OperatingUnitNumber, Terminal from priorQueue
+                index CustAccountStatusIdx
+                where priorQueue.CustAccount   == _custTable.AccountNum
+                   && priorQueue.SourceChannel != ''
+                   && priorQueue.SourceChannel != 'D365FO';
+
+            if (priorQueue.SourceChannel)
+            {
+                sourceChannel       = priorQueue.SourceChannel;
+                operatingUnitNumber = priorQueue.OperatingUnitNumber;
+                terminal            = priorQueue.Terminal;
+            }
         }
-        else if (_custTable.CustGroup == 'Retail' || _custTable.CustGroup == 'Cash')
+
+        if (!sourceChannel)
         {
-            sourceChannel = 'POS';
+            if (_custTable.CustGroup == 'B2C E-Comm')
+            {
+                sourceChannel = 'E-Comm';
+            }
+            else if (_custTable.CustGroup == 'Retail')
+            {
+                sourceChannel = 'POS';
+            }
+            else if (_custTable.CustGroup == 'Service')
+            {
+                sourceChannel = 'SERVICE';
+            }
+            else
+            {
+                sourceChannel = 'D365FO';
+            }
         }
 
         return [sourceChannel, operatingUnitNumber, terminal];

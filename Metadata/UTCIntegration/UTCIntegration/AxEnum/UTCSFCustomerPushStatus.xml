@@ -25,6 +25,11 @@
 			<Label>Failed</Label>
 			<Value>3</Value>
 		</AxEnumValue>
+		<AxEnumValue>
+			<Name>SucceededWithWarnings</Name>
+			<Label>Succeeded with warnings</Label>
+			<Value>4</Value>
+		</AxEnumValue>
 	</EnumValues>
 	<IsExtensible>true</IsExtensible>
 </AxEnum>

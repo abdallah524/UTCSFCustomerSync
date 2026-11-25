@@ -15,8 +15,10 @@ public class UTCSFCustomerPushQueue extends common
     {
         super();
 
-        this.Status     = UTCSFCustomerPushStatus::Pending;
-        this.RetryCount = 0;
+        this.Status               = UTCSFCustomerPushStatus::Pending;
+        this.RetryCount           = 0;
+        this.AllowOutOfScopeGroup = NoYes::No;
+        this.IsPermanentFailure   = NoYes::No;
 
         if (!this.SourceChannel)
         {
@@ -90,9 +92,10 @@ public class UTCSFCustomerPushQueue extends common
     /// <returns>The inserted <c>UTCSFCustomerPushQueue</c> record.</returns>
     public static UTCSFCustomerPushQueue enqueue(
         CustAccount           _custAccount,
-        UTCSFSourceChannel    _sourceChannel       = 'D365FO',
-        OMOperatingUnitNumber _operatingUnitNumber = '',
-        RetailTerminalId      _terminal            = '')
+        UTCSFSourceChannel    _sourceChannel        = 'D365FO',
+        OMOperatingUnitNumber _operatingUnitNumber  = '',
+        RetailTerminalId      _terminal             = '',
+        boolean               _allowOutOfScopeGroup = false)
     {
         UTCSFCustomerPushQueue queueRecord;
 
@@ -105,12 +108,14 @@ public class UTCSFCustomerPushQueue extends common
 
         queueRecord.clear();
         queueRecord.initValue();
-        queueRecord.CustAccount         = _custAccount;
-        queueRecord.SourceChannel       = _sourceChannel ? _sourceChannel : 'D365FO';
-        queueRecord.OperatingUnitNumber = _operatingUnitNumber;
-        queueRecord.Terminal            = _terminal;
-        queueRecord.Status              = UTCSFCustomerPushStatus::Pending;
-        queueRecord.RetryCount          = 0;
+        queueRecord.CustAccount          = _custAccount;
+        queueRecord.SourceChannel        = _sourceChannel ? _sourceChannel : 'D365FO';
+        queueRecord.OperatingUnitNumber  = _operatingUnitNumber;
+        queueRecord.Terminal             = _terminal;
+        queueRecord.AllowOutOfScopeGroup = _allowOutOfScopeGroup ? NoYes::Yes : NoYes::No;
+        queueRecord.IsPermanentFailure   = NoYes::No;
+        queueRecord.Status               = UTCSFCustomerPushStatus::Pending;
+        queueRecord.RetryCount           = 0;
         queueRecord.insert();
 
         ttscommit;
@@ -242,7 +247,11 @@ public class UTCSFCustomerPushQueue extends common
         {
             queueRecord.Status              = UTCSFCustomerPushStatus::Succeeded;
             queueRecord.LastRequestId       = _requestId;
-            queueRecord.SalesforceAccountId = _sfAccountId;
+            if (_sfAccountId != '')
+            {
+                queueRecord.SalesforceAccountId = _sfAccountId;
+            }
+            queueRecord.IsPermanentFailure  = NoYes::No;
             queueRecord.LastError           = '';
             queueRecord.ProcessedDateTime   = DateTimeUtil::utcNow();
             queueRecord.update();
@@ -276,10 +285,11 @@ public class UTCSFCustomerPushQueue extends common
         queueRecord = UTCSFCustomerPushQueue::findByRecId(_queueRecId, true);
         if (queueRecord.RecId != 0)
         {
-            queueRecord.RetryCount        = queueRecord.RetryCount + 1;
-            queueRecord.LastError         = _errorMessage;
-            queueRecord.LastRequestId     = _requestId;
-            queueRecord.ProcessedDateTime = DateTimeUtil::utcNow();
+            queueRecord.RetryCount         = queueRecord.RetryCount + 1;
+            queueRecord.LastError          = _errorMessage;
+            queueRecord.LastRequestId      = _requestId;
+            queueRecord.IsPermanentFailure = _isPermanentFailure ? NoYes::Yes : NoYes::No;
+            queueRecord.ProcessedDateTime  = DateTimeUtil::utcNow();
 
             if (_isPermanentFailure || queueRecord.RetryCount >= maxRetries)
             {
@@ -466,6 +476,22 @@ public class UTCSFCustomerPushQueue extends common
 			i:type="AxTableFieldString">
 			<Name>SalesforceAccountId</Name>
 			<ExtendedDataType>UTCSFSalesforceAccountId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>AllowOutOfScopeGroup</Name>
+			<ExtendedDataType>NoYesId</ExtendedDataType>
+			<HelpText>True when an existing B2C customer transitioned to an out-of-scope group (e.g. Coops) and must be updated in Salesforce.</HelpText>
+			<Label>Allow Out-of-Scope Group</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>IsPermanentFailure</Name>
+			<ExtendedDataType>NoYesId</ExtendedDataType>
+			<HelpText>True when the row failed with a non-retryable validation error (HTTP 400 or row status error).</HelpText>
+			<Label>Permanent Validation Failure</Label>
+			<EnumType>NoYes</EnumType>
 		</AxTableField>
 	</Fields>
 	<FullTextIndexes />
